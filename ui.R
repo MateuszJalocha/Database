@@ -1,4 +1,4 @@
-header <- dashboardHeader(titleWidth = 300,title = "Econometric model",
+header <- dashboardHeader(titleWidth = 300,title = "Econ model",
                           dropdownMenu(
                             type = "messages",
                             messageItem(
