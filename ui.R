@@ -1,244 +1,372 @@
-header <- dashboardHeader(titleWidth = 300,title = "Econ model",
-                          dropdownMenu(
-                            type = "messages",
-                            messageItem(
-                              from = "Mateusz",
-                              message = "You can view 1st project",
-                              href = "https://spotthestation.nasa.gov/sightings/"
-                            ),
-                            messageItem(
-                              from = "Mateusz",
-                              message = "You can view 2nd project",
-                              href = "https://spotthestation.nasa.gov/sightings/"
-                            )
-                          )
+#########################################
+########Navbar, sidebar, footer##########
+#########################################
+
+#Navbar options
+navbar = bs4DashNavbar(
+  skin = "light",
+  status = "white",
+  border = TRUE,
+  sidebarIcon = "bars",
+  controlbarIcon = "th",
+  fixed = FALSE
 )
 
-
-sidebar <- dashboardSidebar(width = 300,
-                            useShinyjs(),
-                            sidebarMenu(
-                              id = "tabs",
-                              menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
-                              menuItem("Upload Data", tabName = "uploaded", icon = icon("upload", lib = "glyphicon"),
-                                       
-                                       menuSubItem(icon = NULL,
-                                                   fileInput("file_name1", "Select Data")),
-                                       menuSubItem(icon = NULL,
-                                                   actionButton("deleteFile1", "Delete file")),
-                                       menuSubItem(icon = NULL,
-                                                   sliderInput("sheet1", "Sheet:", min=1, max=20, value=1,
-                                                               width = '95%'))
-                              ),
-                              
-                              menuItem("Charts", tabName = "charts", icon = icon("stats", lib = "glyphicon"),
-                                       menuItem("Correlation plots", tabName = "corrPlots", icon = icon("menu-right", lib = "glyphicon")),
-                                       menuItem("Histograms", tabName = "hist", icon = icon("menu-right", lib = "glyphicon")),
-                                       menuItem("Correlations matrix", tabName = "corrMatrix", icon = icon("menu-right", lib = "glyphicon")),
-                                       menuItem("Others", tabName = "otherCharts", icon = icon("menu-right", lib = "glyphicon"))
-                                       
-                              ),
-                              menuItem("Make model", tabName = "model", icon = icon("indent-right", lib = "glyphicon")),
-                              menuItem("Statistic method", tabName = "statisticMethod", icon = icon("signal", lib = "glyphicon")),
-                              menuItem("Boostrap method", tabName = "bootstrapMethod", icon = icon("bitcoin", lib = "glyphicon")),
-                              menuItem("Model diagnostics", tabName = "modelDiagnostics", icon = icon("scale", lib = "glyphicon")),
-                              menuItem("Model analysis", tabName = "modelAnalysis", icon = icon("tasks", lib = "glyphicon")),
-                              menuItem("Compare models", tabName = "compareModels", icon = icon("resize-small", lib = "glyphicon")),
-                              tags$script(HTML("$('body').addClass('sidebar-mini');"))
-                            )
-)
-
-#Dashboard fluid rows
-frow1 <- fluidRow(
-  div(style="padding-left:15px;",
-      uiOutput("numbrows"),
-      uiOutput("numbcols")
-  )
-)
-frow2 <- fluidRow( 
-  uiOutput("MainBody")
-  
-)
-frow3 <- fluidRow(
-  div(style="padding-left:30px;",
-      uiOutput("button1")
+#Controlbar options
+controlbar = bs4DashControlbar(
+  skin = "light",
+  title = "My right sidebar",
+  width = 250,
+  sliderInput(
+    inputId = "obs", 
+    label = "Number of observations:",
+    min = 0, 
+    max = 1000, 
+    value = 500
   ),
-  hidden(
-    div(id='summary_div',
-        tableOutput("summary")
+  column(
+    width = 12,
+    align = "center",
+    radioButtons(
+      inputId = "dist", 
+      label = "Distribution type:",
+      c("Normal" = "norm",
+        "Uniform" = "unif",
+        "Log-normal" = "lnorm",
+        "Exponential" = "exp")
     )
   )
 )
 
-#Tab items
-
-dashboard <- tabItem(tabName = "dashboard",
-                     frow1,frow2,frow3)
+#Footer options
+footer = bs4DashFooter()
 
 
-corrPlots <-  tabItem(tabName = "corrPlots", class = "active",
-                      
-                      h2("Correlation plots"),
-                      fluidRow(
-                        column(3,
-                               fluidRow(
-                                 box(
-                                   title = "Variables", width = 12, status = "primary", collapsible = T, solidHeader = T,
-                                   selectInput("corrplot_model", "Select model", choices = "Pending Upload"),
-                                   selectInput("yAxis", "Select y-axis variable", choices = "Pending Upload"),
-                                   selectInput("xAxis", "Select x-axis variable", choices = "Pending Upload")
-                                   
-                                 )
-                               ),
-                               
-                               fluidRow(
-                                 box(
-                                   title = "Parameters", width = 12, status = "primary", collapsible = T, solidHeader = T, collapsed = T,
-                                   radioButtons("smooth", "Smooth:",
-                                                c("Yes" = "yes",
-                                                  "No" = "no")),
-                                   radioButtons("se", "Se:",
-                                                c("Yes" = "yes",
-                                                  "No" = "no")),
-                                   radioButtons("method", "Method:",
-                                                c("lm" = "lm",
-                                                  "loess" = "loess",
-                                                  "gam" = "gam")),
-                                   selectInput("colorSelect", "Color by?", choices = "Pending Upload"),
-                                   selectInput("shapeSelect", "Shape by?", choices = "Pending Upload"),
-                                   radioButtons("whiteNoise", "Add white noise:",
-                                                c("Yes" = "yes",
-                                                  "No" = "no"), selected = "no")
-                                 )
-                               )
-                        ),
-                        uiOutput("boxcorrPlot")
-                      )
-                      
-                      
+#####################################
+##########Sidebar content############
+#####################################
+
+sidebar = bs4DashSidebar(
+  skin = "dark",
+  status = "primary",
+  title = "Baza danych",
+  brandColor = "primary",
+  url = "https://www.google.fr",
+  elevation = 3,
+  opacity = 0.8,
+  bs4SidebarUserPanel(
+    img = "https://image.flaticon.com/icons/svg/1149/1149168.svg", 
+    text = "Imie Nazwisko"
+  ),
+  bs4SidebarMenu(
+    bs4SidebarMenuItem(
+      "Dashboard",
+      tabName = "dashboardMenu",
+      icon = "dashboard"
+    ),
+    bs4SidebarMenuItem(
+      "Dane",
+      tabName = "data",
+      icon = "database"
+    ),
+    bs4SidebarMenuItem(
+      "Wydatki",
+      tabName = "expenses",
+      icon = "credit-card"
+    ),
+    bs4SidebarMenuItem(
+      "Kalendarz",
+      tabName = "calendarMenu",
+      icon = "calendar"
+    ),
+    bs4SidebarMenuItem(
+      "Mail",
+      tabName = "mailMenu",
+      icon = 'envelope'
+    ),
+    bs4SidebarMenuItem(
+      "Dokumenty",
+      tabName = "filesMenu",
+      icon = "file"
+    )
+  )
 )
 
 
-hist <-  tabItem(tabName = "hist",
-                 h2("Histograms"),
-                 box(
-                   title = "Parameters", width = 4, status = "primary", collapsible = T, solidHeader = T,
-                   selectInput("hist_model", "Select model", choices = "Pending Upload"),
-                   sliderInput("breaks", "Breaks:", min=1, max=200, value=20),
-                   selectInput("histSelect", "Select x-axis variable", choices = "Pending Upload")
-                   
-                 ),
-                 
-                 uiOutput("boxHist")
-                 
+
+
+#####################################
+##########Body content###############
+#####################################
+
+############Dashboard tab###############
+
+#Informations on persons who have not made payments and total payments in the months concerned
+payments = fluidRow(
+  column(
+    width = 6,
+    bs4Card(
+      title = "Suma wplat",
+      maximizable = TRUE,
+      closable = TRUE,
+      width = 12,
+      status = "primary",
+      solidHeader = FALSE,
+      collapsible = TRUE
+    )
+  ),
+  column(
+    width = 6,
+    bs4Card(
+      title = "Osoby, ktore nie wplacily",
+      closable = TRUE,
+      width = 12,
+      status = "danger",
+      solidHeader = FALSE,
+      collapsible = TRUE
+    )
+  )
 )
 
-corrMatrix <- tabItem(tabName = "corrMatrix",
-                      h2("Correlation matrix"),
-                      box(
-                        title = "Parameters", width = 4, status = "primary",collapsible = T, solidHeader = T,
-                        selectInput("matrix_model", "Select model", choices = "Pending Upload"),
-                        radioButtons("matrix", "Select matrix type:",
-                                     c("Independent" = "independent",
-                                       "Dependent" = "dependent")),
-                        selectInput("matrixSelect", "Select dependent variable", choices = "Pending Upload")
-                      ),
-                      uiOutput("boxMatrix")
+#To do list and calendar
+additional_boxes = fluidRow(
+  column(
+    width = 6,
+    bs4Card(
+      title = "Rzeczy do zrobienia",
+      closable = TRUE,
+      width = 12,
+      status = "primary",
+      solidHeader = FALSE,
+      collapsible = TRUE
+    )
+  ),
+  column(
+    width = 6,
+    bs4Card(
+      title = "Kalendarz",
+      closable = TRUE,
+      width = 12,
+      solidHeader = FALSE,
+      gradientColor = "success",
+      collapsible = TRUE
+    )
+  )
 )
 
-otherCharts <- tabItem(tabName = "otherCharts", class = "active",
-                       h2("Other charts"),
-                       fluidRow(
-                         box(
-                           title = "Parameters", width = 3, status = "primary",collapsible = T, solidHeader = T,
-                           selectInput("others_model", "Select model", choices = "Pending Upload"),
-                           selectInput("chartSelect", "Select plot type", choices = c("Boxplot" = "boxplot",
-                                                                                      "Density" = "density",
-                                                                                      "Density Ridges"= "densityRid",
-                                                                                      "Violin" = "violin")),
-                           
-                           selectInput("yAxisOther", "Select y-axis variable", choices = "Pending Upload"),
-                           
-                           selectInput("xAxisOther", "Select x-axis variable", choices = "Pending Upload")
-                         ),
-                         uiOutput("boxotherCharts")
-                       )
+#Information boxes about total payments in the current month, number of people who have not paid this month and 
+#total number of persons who have not paid
+info_valueBoxes = fluidRow(
+  bs4ValueBox(
+    width = 3,
+    value = 1500,
+    subtitle = "Suma wplat w tym miesiącu",
+    status = "primary",
+    icon = "shopping-cart",
+    href = "#"
+  ),
+  bs4ValueBox(
+    width = 3,
+    value = 11,
+    subtitle = "Liczba osob, ktore nie wpłaciły w tym miesiącu",
+    status = "danger",
+    icon = "cogs"
+  ),
+  bs4ValueBox(
+    width= 3,
+    value = 12,
+    subtitle = "Łączna liczba osób, które nie wpłaciły",
+    status = "warning",
+    icon = "sliders"
+  )
 )
 
-model <- tabItem(tabName = "model",
-                 h2("Choose variables to your model"),
-                 box(
-                   title = "Parameters", width = 3, status = "primary",collapsible = T, solidHeader = T,
-                   selectInput("modelDepVar", "Select dependent variable", choices = "Pending Upload"),
-                   pickerInput("modelIndVar","Select independent variable", choices="Pending upload", options = list(`actions-box` = T),multiple = T),
-                   textInput("modelName", "Choose your model name", "Model 1"),
-                   uiOutput("downloadSaveModel_butt"),
-                   uiOutput("clearModel_butt")
-                 ),
-                 
-                 uiOutput("modelDTX")
-                 
+##########Calendar tab############
+calendar = fluidRow(
+  
+  #Create event
+  column(
+    width = 4,
+    bs4Card(
+      closable = FALSE,
+      title = "Stwórz wydarzenie",
+      width = 12,
+      solidHeader = FALSE,
+      tags$h4("Wybierz kolor"),
+      actionButton("eventRed", "",
+                   style="color: #fff; background-color: #E41A1C; border-color: #2e6da4; height: 30px; width: 30px"),
+      actionButton("eventBlue", "", 
+                   style="color: #fff; background-color: #377EB8; border-color: #2e6da4; height: 30px; width: 30px"),
+      actionButton("eventGreen", "", 
+                   style="color: #fff; background-color: #4DAF4A; border-color: #2e6da4; height: 30px; width: 30px"),
+      actionButton("eventYellow", "", 
+                   style="color: #fff; background-color: #EEE8AA; border-color: #2e6da4; height: 30px; width: 30px"),
+      textInput("eventName", "Nazwa wydarzenia"),
+      textInput("eventBody", "Treść wydarzenia"),
+      dateRangeInput('eventDate',
+                     label = 'Data wydarzenia',
+                     start = Sys.Date(), end = Sys.Date()
+      ),
+      fluidRow(
+        splitLayout(cellWidths = c("35%", "35%"),
+                    timeInput("startTime", "Godzina rozpoczęcia", seconds = FALSE, value = strptime("13:00:00", "%T")),
+                    
+                    timeInput("endTime", "Godzina zakończenia", seconds = FALSE, value = strptime("14:00:00", "%T"))
+        )
+      ),
+      actionButton("createEvent", "Stwórz wydarzenie", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  ),
+  
+  #Calendar
+  column(
+    width = 7,
+    bs4Card(
+      title = "April",
+      width = 12,
+      closable = FALSE,
+      solidHeader = FALSE,
+      actionGroupButtons(
+        inputIds = c("calendarToday", "calendarPrevious", "calendarNext"),
+        labels = list("Dzisiaj", "<",">"),
+        status = "primary"
+      ),
+      br(),
+      calendarOutput("calendar"),
+      br(),
+      actionGroupButtons(
+        inputIds = c("monthButton", "weekButton", "dayButton"),
+        labels = list("Mesiąc", "Tydzień","Dzień"),
+        status = "primary"
+      )
+    )
+  )
+  
+  
 )
 
-statisticMethod <- tabItem(tabName = "statisticMethod",
-                           h2("Choose statistic method"),
-                           fluidRow(
-                             column(3,
-                                    box(
-                                      title = "Parameters", width = 12, status = "primary",collapsible = T, solidHeader = T,
-                                      selectInput("statisticMethod_model", "Select model", choices = "Pending Upload"),
-                                      selectInput("statisticMethod","Select statistic method", choices="Pending upload"),
-                                      
-                                      uiOutput("statisticMethod_butt"),
-                                      uiOutput("saveStaticModel_butt"),
-                                      uiOutput("clearStaticModel_butt")
-                                    ),
-                                    uiOutput("hellwig_resultsDT")
-                             ),
-                             uiOutput("model_Hellwig")
-                           ),
-                           uiOutput("graphMatrix_output")
+
+#########Files tab##########
+files = fluidRow(
+  
+  #Upload file
+  column(
+    width = 4,
+    bs4Card(
+      closable = FALSE,
+      title = "Wgraj plik",
+      width = 12,
+      solidHeader = FALSE,
+      fileInput("file", "Proszę wybrać plik"),
+      actionButton("uploadFile", "Zapisz plik", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  ),
+  
+  #Uploaded files
+  column(
+    width = 7,
+    bs4Card(
+      title = "Wgrane pliki",
+      width = 12,
+      closable = FALSE,
+      solidHeader = FALSE,
+      dataTableOutput("files_dropbox"),
+      br(),
+      uiOutput("filesPicker"),
+      actionButton("downloadFile", "Pobierz plik", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  )
 )
 
-bootstrapMethod <- tabItem(tabName = "bootstrapMethod",
-                           box(
-                             title = "Parameters", width = 3, status = "primary",collapsible = T, solidHeader = T,
-                             selectInput("boostrapMethod_model", "Select model", choices = "Pending Upload"),
-                             numericInput("alfa", "Select alfa:",value = 0.5, min = 0.001, max = 0.999, step = 0.01),
-                             numericInput("bootstrapTrials", "Select number of trials:",value = 100, min = 100, max = 10000, step = 100),
-                             
-                             uiOutput("bootstrapMethod_butt"),
-                             uiOutput("saveBootstrapModel_butt"),
-                             uiOutput("clearBootstrapModel_butt")
-                             
-                           ),
-                           
-                           verbatimTextOutput("summary2")
+
+###########Mail tab############
+#Mail tab
+mail = fluidRow(
+  
+  #Create and edit mail template
+  column(
+    width = 5,
+    
+    #Create mail template
+    bs4Card(
+      closable = FALSE,
+      collapsed = TRUE,
+      title = "Utwórz template maila",
+      width = 12,
+      solidHeader = FALSE,
+      textInput("templateNameCreate", "Nazwa szablonu"),
+      textAreaInput("templateBodyCreate", "Szablon maila", "Dzień dobry,", resize = "both") %>%
+        shiny::tagAppendAttributes(style = 'width: 100%;'),
+      actionButton("saveTemplate", "Zapisz szablon", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    ),
+    
+    #Edit mail template
+    bs4Card(
+      closable = FALSE,
+      collapsed = TRUE,
+      title = "Edytuj template",
+      width = 12,
+      solidHeader = FALSE,
+      uiOutput("templateNameEdit"),
+      uiOutput("templateBodyEdit"),
+      actionButton("editTemplate", "Edytuj szblon", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  ),
+  
+  #Send a group mail
+  column(
+    width = 7,
+    bs4Card(
+      title = "Wyślij grupowego maila",
+      width = 12,
+      closable = FALSE,
+      solidHeader = FALSE,
+      fluidRow(
+        column(width = 4,
+               uiOutput("mailList")
+        ),
+        column(width = 4,
+               uiOutput("templateList")
+        )
+      ),
+      uiOutput("mailTitle"),
+      uiOutput("mailBody"),
+      actionButton("sendMail", "Wyślij maila", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  )
 )
 
-compareModels <- tabItem(tabName = "compareModels",
-                         fluidRow(
-                           column(3,
-                                  box(
-                                    title = "Parameters", width = 12, status = "primary",collapsible = T, solidHeader = T,
-                                    selectInput("compare_model1", "Select model for bootstrap method", choices = "Pending Upload"),
-                                    selectInput("compare_model2", "Select model for classic method", choices = "Pending Upload"),
-                                    numericInput("compareTrials", "Select number of trials:",value = 100, min = 100, max = 10000, step = 100),
-                                    numericInput("densitySize", "Select size of density:",value = 1, min = 1, max = 5, step = 1),
-                                    
-                                    uiOutput("compare_butt"),
-                                    uiOutput("clearCompare_butt")
-                                  )
-                           ),
-                           column(7,
-                                  uiOutput("coef_DT")
-                           )
-                         ),
-                         uiOutput("coef_plot")
-                         
-)
-# combine fluid rows to make the body
-body <- dashboardBody(tabItems(dashboard,hist,corrMatrix, corrPlots, otherCharts, uiOutput("basicStats"),model, statisticMethod, bootstrapMethod, compareModels))
+#############Tab items#################
 
-# Create the UI using the header, sidebar, and body
-ui <- dashboardPage(header,sidebar,body)
+calendarMenu =  bs4TabItem(tabName = "calendarMenu",
+                           calendar)
+
+dashboardMenu = bs4TabItem(tabName = "dashboardMenu",
+                           info_valueBoxes, payments, additional_boxes)
+filesMenu = bs4TabItem(tabName = "filesMenu",
+                       files)
+mailMenu = bs4TabItem(tabName = "mailMenu",
+                      mail)
+
+#Combine all body components
+body = bs4DashBody(
+  bs4TabItems(dashboardMenu,calendarMenu, filesMenu,mailMenu)
+)
+
+
+
+#####################################
+######Combine all components#########
+#####################################
+
+
+ui = bs4DashPage(
+  enable_preloader = TRUE,
+  controlbar_collapsed = TRUE,
+  title = "Database App",
+  navbar = navbar,
+  sidebar = sidebar,
+  controlbar = controlbar,
+  footer = footer,
+  body = body
+)
