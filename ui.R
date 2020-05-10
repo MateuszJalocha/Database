@@ -55,10 +55,11 @@ sidebar = bs4DashSidebar(
   elevation = 3,
   opacity = 0.8,
   bs4SidebarUserPanel(
-    img = "https://image.flaticon.com/icons/svg/1149/1149168.svg", 
-    text = "Imie Nazwisko"
+    img = "https://image.flaticon.com/icons/svg/1149/1149168.svg",
+    text =actionLink(inputId = "userPanelLink", label = textOutput("userName"))
   ),
   bs4SidebarMenu(
+    id = "sidebarMenu",
     bs4SidebarMenuItem(
       "Dashboard",
       tabName = "dashboardMenu",
@@ -66,13 +67,22 @@ sidebar = bs4DashSidebar(
     ),
     bs4SidebarMenuItem(
       "Dane",
-      tabName = "data",
+      tabName = "dataMenu",
       icon = "database"
     ),
     bs4SidebarMenuItem(
       "Wydatki",
-      tabName = "expenses",
-      icon = "credit-card"
+      icon = "credit-card",
+      bs4SidebarMenuSubItem(
+        text = "Twoje wydatki",
+        tabName = "seeExpensesMenu",
+        icon = "circle-thin"
+      ),
+      bs4SidebarMenuSubItem(
+        text = "Zarządzaj wydatkami",
+        tabName = "addExpensesMenu",
+        icon = "circle-thin"
+      )
     ),
     bs4SidebarMenuItem(
       "Kalendarz",
@@ -88,6 +98,11 @@ sidebar = bs4DashSidebar(
       "Dokumenty",
       tabName = "filesMenu",
       icon = "file"
+    ),
+    bs4SidebarMenuItem(
+      "Panel użytkownika",
+      tabName = "userPanelMenu",
+      icon = "dashboard"
     )
   )
 )
@@ -112,18 +127,37 @@ payments = fluidRow(
       width = 12,
       status = "primary",
       solidHeader = FALSE,
-      collapsible = TRUE
+      collapsible = TRUE,
+      plotlyOutput("barPlot_payments")
     )
   ),
   column(
     width = 6,
-    bs4Card(
-      title = "Osoby, ktore nie wplacily",
-      closable = TRUE,
+    bs4TabCard(
+      id = "notPaidTab",
+      title = "Kto nie wpłacił",
+      closable = FALSE,
       width = 12,
-      status = "danger",
-      solidHeader = FALSE,
-      collapsible = TRUE
+      bs4TabPanel(
+        tabName = "Nie wpłacili miesięcznej",
+        active = TRUE,
+        dataTableOutput("notPaidMonth_list")
+      ),
+      bs4TabPanel(
+        tabName = "Nie wpłacili rocznej",
+        active = FALSE,
+        dataTableOutput("notPaidYear_list")
+      ),
+      bs4TabPanel(
+        tabName = "Wpłacili część miesięcznej",
+        active = FALSE,
+        dataTableOutput("partPaidMonth_list")
+      ),
+      bs4TabPanel(
+        tabName = "Wpłacili część rocznej",
+        active = FALSE,
+        dataTableOutput("partPaidYear_list")
+      )
     )
   )
 )
@@ -159,7 +193,7 @@ additional_boxes = fluidRow(
 info_valueBoxes = fluidRow(
   bs4ValueBox(
     width = 3,
-    value = 1500,
+    value = textOutput("paymentsSum_month"),
     subtitle = "Suma wplat w tym miesiącu",
     status = "primary",
     icon = "shopping-cart",
@@ -167,14 +201,14 @@ info_valueBoxes = fluidRow(
   ),
   bs4ValueBox(
     width = 3,
-    value = 11,
+    value = textOutput("paymentsSum_year"),
     subtitle = "Liczba osob, ktore nie wpłaciły w tym miesiącu",
     status = "danger",
     icon = "cogs"
   ),
   bs4ValueBox(
     width= 3,
-    value = 12,
+    value = textOutput("notpaidMonth"),
     subtitle = "Łączna liczba osób, które nie wpłaciły",
     status = "warning",
     icon = "sliders"
@@ -336,22 +370,185 @@ mail = fluidRow(
   )
 )
 
+#########Data tab##########
+data = fluidRow(
+  bs4Card(
+    title = "Wgrane dane",
+    width = 12,
+    closable = FALSE,
+    solidHeader = FALSE,
+    dataTableOutput("datasetTable")
+  ),
+  bs4TabCard(
+    id = "dataTabPanels",
+    title = "Wgraj dane",
+    closable = FALSE,
+    width = 4,
+    bs4TabPanel(
+      tabName = "Excel",
+      active = TRUE,
+      bs4TabPanel(tabName = "",fileInput("excelFile", "Proszę wybrać plik xls")),
+      actionButton("uploadExcelData", "Wgraj dane", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    ),
+    bs4TabPanel(
+      tabName = "CSV",
+      active = FALSE,
+      bs4TabPanel(tabName = "",fileInput("csvFile", "Proszę wybrać plik csv")),
+      actionButton("uploadCSVData", "Wgraj dane", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+    )
+  )
+)
+
+
+############User panel tab###############
+
+#Informations on persons who have not made payments and total payments in the months concerned
+userPanel = fluidRow(
+  column(
+    width = 9,
+    offset = 4,
+    bs4UserCard(
+      useShinyjs(),
+      src =  img(id="my_img",src="https://adminlte.io/themes/AdminLTE/dist/img/user1-128x128.jpg",style="cursor:pointer;"),
+      status = "info",
+      title = textOutput("userPanelName"),
+      elevation = 4,
+      htmlOutput("userInformations"),
+      br(),
+      fluidRow(
+        column(
+          width = 5,
+          offset = 7,
+          actionButton("editData", "Edytuj dane", style="color: #fff; background-color: #337ab7; border-color: #2e6da4"),
+          actionButton("changePassword", "Zmień hasło", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+        )
+      )
+    )
+  )
+)
+
+userPanelInformations = fluidRow(
+  bs4ValueBox(
+    width = 3,
+    value = textOutput("clientsNumber"),
+    subtitle = "Liczba klientów",
+    status = "primary",
+    icon = "shopping-cart",
+    href = "#"
+  ),
+  bs4ValueBox(
+    width = 3,
+    value = textOutput("groupsNumber"),
+    subtitle = "Liczba grup",
+    status = "danger",
+    icon = "cogs"
+  )
+)
+
+
+#########Add expenses tab##########
+
+addExpenses = fluidRow(
+  column(
+    width = 5,
+    bs4Card(
+      closable = FALSE,
+      title = "Dodaj wydatek",
+      width = 12,
+      solidHeader = FALSE,
+      div(shinyjs::useShinyjs(), id = "input-panel",
+          textInput("addExpenseName", "Nazwa wydatku"),
+          textInput("addExpenseCategory", "Kategoria wydatku"),
+          textInput("addExpenseAmount", "Kwota wydatku"),
+          dateInput("addExpenseDate", "Data", format = "yyyy-mm-dd"),
+          actionButton("saveExpense", "Zapisz wydatek", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+      ))),
+  column(
+    width = 7,
+    wellPanel(h3(strong("Twoje wydatki")), br(),
+              DT::dataTableOutput("result_add"),
+              hr(),
+              actionButton("deleteExpense", "Usuń pozycję", class = "btn-primary",
+                           icon=icon("trash", class = NULL, lib = "font-awesome"))
+    ))
+)
+
+#########See expenses tab##########
+
+seeExpenses = fluidRow(
+  bs4ValueBox(
+    width = 2,
+    value = 123,
+    subtitle = "Suma wydatków w bieżącym miesiącu",
+    status = "primary",
+    icon = "shopping-cart"
+  ),
+  bs4ValueBox(
+    width = 2,
+    value = 11,
+    subtitle = "Dom",
+    status = "danger",
+    icon = "cogs"
+  ),
+  bs4ValueBox(
+    width= 2,
+    value = 12,
+    subtitle = "Przyjemności",
+    status = "warning",
+    icon = "sliders"
+  ),
+  bs4ValueBox(
+    width= 2,
+    value = 12,
+    subtitle = "Dzieci",
+    status = "warning",
+    icon = "sliders"
+  ),
+  column(width = 3,
+         dateRangeInput("dates", h3("Przedział czasowy")),
+         actionButton("subsetDate", "Zatwierdź", class = "btn-primary"),
+         actionButton("clear","Wyczyść")),
+  
+  column(
+    width = 7,
+    wellPanel(h3(strong("Twoje wydatki")), br(),
+              DT::dataTableOutput("result")
+    )),    
+  column(
+    width = 6,
+    plotlyOutput("piePlot")
+  ),
+  column(
+    width = 6,
+    plotlyOutput("hist")
+  )
+)
+
+
+
 #############Tab items#################
 
 calendarMenu =  bs4TabItem(tabName = "calendarMenu",
                            calendar)
-
 dashboardMenu = bs4TabItem(tabName = "dashboardMenu",
                            info_valueBoxes, payments, additional_boxes)
 filesMenu = bs4TabItem(tabName = "filesMenu",
                        files)
 mailMenu = bs4TabItem(tabName = "mailMenu",
                       mail)
-
+dataMenu = bs4TabItem(tabName = "dataMenu",
+                      data)
+userPanelMenu = bs4TabItem(tabName = "userPanelMenu",
+                           userPanelInformations,userPanel)
+addExpensesMenu = bs4TabItem(tabName = "addExpensesMenu",
+                             addExpenses)
+seeExpensesMenu = bs4TabItem(tabName = "seeExpensesMenu",
+                             seeExpenses)
 #Combine all body components
 body = bs4DashBody(
-  bs4TabItems(dashboardMenu,calendarMenu, filesMenu,mailMenu)
+  bs4TabItems(dashboardMenu,calendarMenu, filesMenu,mailMenu,dataMenu, userPanelMenu,addExpensesMenu,seeExpensesMenu)
 )
+
 
 
 
@@ -370,3 +567,6 @@ ui = bs4DashPage(
   footer = footer,
   body = body
 )
+
+# Wrap UI with secure_app
+ui <- secure_app(ui)

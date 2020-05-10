@@ -24,7 +24,7 @@ library(shiny)
 library(colourpicker)
 library(shinyWidgets)
 library(shinyTime)
-#Connecting with Google calendar
+#Connection with Google calendar
 library(googlecalendar)
 library(fullcalendar)
 library(gcalendar)
@@ -39,4 +39,15 @@ library(mailR)
 library(RMySQL)
 #Data table
 library(data.table)
-
+library(DT)
+#XLSX
+library(xlsx)
+#nazwac
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(stringr)
+library(rlist)
+#Login
+library(shinymanager)
