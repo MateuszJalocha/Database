@@ -49,5 +49,9 @@ library(plotly)
 library(dplyr)
 library(stringr)
 library(rlist)
+library(shinyalert)
+library(R.utils)
 #Login
 library(shinymanager)
+#Map
+library(purrr)
