@@ -42,11 +42,13 @@ library(data.table)
 library(DT)
 #XLSX
 library(xlsx)
+library(readxl)
 #nazwac
 library(tidyr)
 library(ggplot2)
 library(plotly)
 library(dplyr)
+library(plyr)
 library(stringr)
 library(rlist)
 library(shinyalert)
@@ -55,3 +57,11 @@ library(R.utils)
 library(shinymanager)
 #Map
 library(purrr)
+#String contains
+library(sjmisc)
+#Converting dates
+library(lubridate)
+#Is variable a number?
+library(assertive)
+#Send sms
+library(twilio)
