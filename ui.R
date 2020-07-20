@@ -20,8 +20,8 @@ controlbar = bs4DashControlbar(
   
   uiOutput("monthPayment_input"),
   uiOutput("yearPayment_input"),
-  uiOutput("selectedGroup"),
   div(style="text-align: center;",actionButton("globalChanges", "Zapisz zmiany", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")),
+  uiOutput("selectedGroup"),
   br()
 )
 

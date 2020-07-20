@@ -371,7 +371,7 @@ currentDate_exists_verification <- function(data, colname, type,text,payment) {
   data <- tryCatch(
     {
       sum_of_payments = sum(data[colname])
-      total_payments = nrow(data) * payment
+      total_payments = nrow(nrow(data[data[colname] >= 0,,drop = FALSE])) * payment
       list(paste0(sum_of_payments," zł/",total_payments, " zł"),text)
     },
     error=function(cond) {
@@ -423,11 +423,11 @@ addWhitespaces <- function(data,kind){
 notPaid_partPaid_paid_plot <- function(data, current_year,MonthPayment, YearPayment){
   monthPayments_columns = data[,str_detect(names(data),"wplata"), drop = FALSE] %>% select(-contains("roczna"))
   yearPayment = data[,str_detect(names(data),"wplata"), drop = FALSE] %>% select(contains("roczna"))
-  notPaid_year = apply(yearPayment, 2, function(x){length(x[x<=0])})
+  notPaid_year = apply(yearPayment, 2, function(x){length(x[x==0])})
   partPaid_year = apply(yearPayment, 2, function(x){length(x[x<YearPayment & x>0])})
   paid_year =apply(yearPayment, 2, function(x){length(x[x>=YearPayment])})
   
-  notPaid = apply(monthPayments_columns, 2, function(x){length(x[x<=0])})
+  notPaid = apply(monthPayments_columns, 2, function(x){length(x[x==0])})
   partPaid = apply(monthPayments_columns, 2, function(x){length(x[x<MonthPayment & x>0])})
   paid = apply(monthPayments_columns, 2, function(x){length(x[x>=MonthPayment])})
   
@@ -442,7 +442,6 @@ notPaid_partPaid_paid_plot <- function(data, current_year,MonthPayment, YearPaym
 }
 
 file_exists_verification <- function(path, file_type){
-  print(path)
   file <- tryCatch(
     {
       if(file_type == "xlsx") 
@@ -511,17 +510,17 @@ clients_and_payments_writeTable_addPaymentsCols <- function(clients_ALL, payment
   data_ALL = clients_and_payments_separating(data, kind = kind)
   eddited_payments = data.frame(data_ALL$payments[,grep("id_", names(data_ALL$payments))], data_ALL$payments[,-grep("id_", names(data_ALL$payments))])
   eddited_payments = eddited_payments[!(rownames(eddited_payments) %in% rownames(match_df(eddited_payments,payments_ALL))),]
+  eddited_payments$grupa = group
   rownames(eddited_payments) = seq(nrow(payments_ALL) + 1, nrow(payments_ALL) + nrow(eddited_payments))
-
+  
   clients_ALL[which(clients_ALL$id_uczestnika %in% data_ALL$clients$id_uczestnika & clients_ALL$id_uzytkownika %in% data_ALL$clients$id_uzytkownika),] = data_ALL$clients
   payments_ALL = rbind(payments_ALL,eddited_payments)
-  
+
   return(list(clients = clients_ALL, payments = payments_ALL))
 }
 
 clients_and_payments_writeTable_edit <- function(clients_ALL, payments_ALL, data,group,kind,addGroups = FALSE) {
   data_ALL = clients_and_payments_separating(data, kind)
-  print(data_ALL)
   eddited_payments = data.frame(data_ALL$payments[,grep("id_", names(data_ALL$payments))], data_ALL$payments[,-grep("id_", names(data_ALL$payments))])
 
   clients_ALL[which(clients_ALL$id_uczestnika %in% data_ALL$clients$id_uczestnika & clients_ALL$id_uzytkownika %in% data_ALL$clients$id_uzytkownika),] = data_ALL$clients
@@ -663,12 +662,16 @@ server = function(input, output, session ){
   observe({
     if(!is.null(res_auth$id)){
       clients = id_filter(clients_ALL$data, "id_uzytkownika", res_auth$id)
-      if(!is.null(input$selectGroup_sidebar))
-        clients = clients[clients$grupa %like% input$selectGroup_sidebar,]
       payments = id_filter(payments_ALL$data, "id_uzytkownika", res_auth$id)
-      clients$data <<- clients_and_payments_merging(clients,payments)
-
       schoolRegister = id_filter(schoolRegister_ALL$data, "id_uzytkownika", res_auth$id)
+      
+      if(!is.null(input$selectGroup_sidebar)){
+        clients = clients[clients$grupa %like% input$selectGroup_sidebar,]
+        payments = payments[payments$grupa %like% input$selectGroup_sidebar,]
+        schoolRegister = schoolRegister[schoolRegister$grupa %like% input$selectGroup_sidebar,]
+      }
+      
+      clients$data <<- clients_and_payments_merging(clients,payments)
       clients_presence$data <<- clients_and_payments_merging(clients,schoolRegister)
 
       templatesData$data = id_filter(templatesData_ALL$data, "id_uzytkownika", res_auth$id)
@@ -1387,7 +1390,7 @@ server = function(input, output, session ){
       if(input$addPayments_type == "Miesięczna")
         dates = unlist(convertDates(input$datesList,kind="wplata"))
       else
-        dates = unlist(convertYear(input$datesList,kind="wplata"))
+        dates = unlist(convertYear(input$datesList))
 
       #Add payments
       lapply(dates, function(x, data){
@@ -1447,7 +1450,7 @@ server = function(input, output, session ){
       if(input$addPayments_type == "Miesięczna")
         dates = unlist(convertDates(input$datesList,kind="wplata"))
       else
-        dates = unlist(convertYear(input$datesList,kind="wplata"))
+        dates = unlist(convertYear(input$datesList))
       
       #Add payments
       lapply(dates, function(x){
@@ -1564,7 +1567,7 @@ server = function(input, output, session ){
       if(input$addColumns_type == "Miesięczna")
         dates = unlist(convertDates(input$addColumns_datesList,kind="wplata"))
       else
-        dates = unlist(convertYear(input$addColumns_datesList,kind="wplata"))
+        dates = unlist(convertYear(input$addColumns_datesList))
       
       #Add columns to dataframe
       lapply(dates, function(x){
@@ -1693,7 +1696,6 @@ server = function(input, output, session ){
       lapply(dates, function(x){
           clients_presence$data[selectedClients_rows(clients_presence$data, input$clientsList_presences),x] = clients_presence$data[selectedClients_rows(clients_presence$data, input$clientsList_presences),x] + 1
       })
-      print(clients_presence$data)
       data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, schoolRegister_ALL$data,clients_presence$data,input$selectGroup_sidebar, kind = "obecnosc")
       dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)  
       dbWriteTable(databaseConnection, "obecnosci", data_ALL$payments, overwrite = TRUE)
@@ -1869,7 +1871,6 @@ server = function(input, output, session ){
       if(!is.na(as.numeric(input$schoolRegister_dataTable_cell_edit$value))) {
         if(as.numeric(input$schoolRegister_dataTable_cell_edit$value) >= 0) {
           clients_presence$data[[edited_column]][input$schoolRegister_dataTable_cell_edit$row] <<- as.numeric(input$schoolRegister_dataTable_cell_edit$value)
-          print(clients_presence$data)
         }
           
         else {
