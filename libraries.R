@@ -63,5 +63,5 @@ library(sjmisc)
 library(lubridate)
 #Is variable a number?
 library(assertive)
-#Send sms
-library(twilio)
+#Split vector into columns
+library(reshape2)
