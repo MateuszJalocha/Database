@@ -1,3 +1,4 @@
+#Global variables
 ActualMonth = month(Sys.Date())
 ActualYear = year(Sys.Date())
 Credentials = dbReadTable(databaseConnection, "wlasciciel_konta")
@@ -6,51 +7,70 @@ Groups = dbReadTable(databaseConnection, "grupy")
 Amounts = dbReadTable(databaseConnection, "kwota_wplaty")
 UserPanelPosition = 11
 
+#Creating a data frame with the data of persons who have not paid or have paid part of the payments
 notPaid <- function(vals, data, time_period) {
   
+  #Verification of the length of the given comparative values. If the length is 1, it checks who has not paid and in what months.
+  #If the length is 2, it verifies who has made part of the contributions and in what months.
   if(length(vals) == 1)
   {
+    #Checking whether annual or monthly payments are to be checked
     if(time_period == "month") {
-      notPaid = data %>% filter_at(vars(data[,str_detect(names(data),"wplata"), drop = FALSE] %>% colnames() %>% as.data.frame() %>%
+      #Filtering people who have not paid in one of the months 
+      notPaid = data %>% filter_at(vars(.[,str_detect(names(.),"wplata"), drop = FALSE] %>% colnames() %>% as.data.frame() %>%
                                           filter(!str_detect(., "roczna")) %>% unlist() %>% as.vector()), any_vars(. == vals[1]))
+      #Writing down dates on which individuals have not paid
       notPaid_dates = apply(notPaid[,str_detect(names(notPaid),"wplata"), drop = FALSE]  %>% select(-contains("roczna")), 1, function(x){names(x[which(x == vals[1])])})
       
+      #Checking that the dates have been assigned correctly
       if(nrow(notPaid) != length(notPaid_dates))
         notPaid_dates = notPaid_dates %>% as.data.frame() %>% as.list()
       
     } else {
+      #Filtering people who have not paid in one of the years
       notPaid = data %>% filter_at(vars(data[,str_detect(names(data),"wplata"), drop = FALSE] %>% colnames() %>% as.data.frame() %>%
                                           filter(str_detect(., "roczna")) %>% unlist() %>% as.vector()), any_vars(. == vals[1]))
     }
     
   } else {
     
+    #Checking whether annual or monthly payments are to be checked
     if(time_period == "month")
     {
+      #Filtering people who have paid part of the deposit in one of the months
       notPaid = data %>% filter_at(vars(data[,str_detect(names(data),"wplata"), drop = FALSE] %>% colnames() %>% as.data.frame() %>%
                                           filter(!str_detect(., "roczna")) %>% unlist() %>% as.vector()), any_vars(. > vals[1] & . < vals[2]))
       
+      #Writing down dates on which individuals have not paid
       notPaid_dates = apply(notPaid[,str_detect(names(notPaid),"wplata"), drop = FALSE]  %>% select(-contains("roczna")), 1, function(x){names(x[which((x > vals[1]) & (x < vals[2]))])}) %>% as.list()
+      
+      #Checking that the dates have been assigned correctly
       if(nrow(notPaid) != length(notPaid_dates))
         notPaid_dates = notPaid_dates %>% as.data.frame() %>% as.list()
       
     } else {
+      #Filtering people who have paid part of the deposit in one of the years
       notPaid = data %>% filter_at(vars(data[,str_detect(names(data),"wplata"), drop = FALSE] %>% colnames() %>% as.data.frame() %>%
                                           filter(str_detect(., "roczna")) %>% unlist() %>% as.vector()), any_vars(. > vals[1] & . < vals[2]))    
     }
   }
 
+  #Checking whether annual or monthly payments are to be checked
   if(time_period == "month"){
+    #Recording dates with outstanding payments in one table and correcting their row names
     notPaid_dates = lapply(notPaid_dates, function(x, y = notPaid){paste(gsub("wplata_","",x),collapse = ", ") }) %>% list.rbind()
     notPaid_dates = gsub("_","-", notPaid_dates)
     rownames(notPaid_dates) = seq(1, nrow(notPaid_dates))
     
+    #Combining tables with personal data and information on dates with overdue payments
+    #and sorting them according to the number of overdue payments (degressive)
     notPaid_df = data.frame(Imie = notPaid$imie, Nazwisko = notPaid$nazwisko,"Imie opiekuna" = notPaid$imie_opiekuna,
                             "Nazwisko opiekuna" = notPaid$nazwisko_opiekuna, "Numer opiekuna" = notPaid$telefon_opiekuna,
                             "Email opiekuna" = notPaid$email_opiekuna,"Daty bez wpłat" = notPaid_dates,
                             "Ile zaległych wpłat" = lengths(strsplit(notPaid_dates, ",")))
     notPaid_df = notPaid_df[order(notPaid_df$Ile.zaległych.wpłat, decreasing = TRUE),]
   } else{
+    #In the case of overdue annual payments, only personal data shall be written off
     notPaid_df = data.frame(Imie = notPaid$imie, Nazwisko = notPaid$nazwisko,"Imie opiekuna" = notPaid$imie_opiekuna,
                             "Nazwisko opiekuna" = notPaid$nazwisko_opiekuna, "Numer opiekuna" = notPaid$telefon_opiekuna,
                             "Email opiekuna" = notPaid$email_opiekuna)
@@ -58,13 +78,17 @@ notPaid <- function(vals, data, time_period) {
   return(notPaid_df)
 }
 
+#Verification whether tables with overdue payments exist
 tables_exists_verification <- function(vals, data, time_period, kind) {
 
+  #Catching the bugs
   data <- tryCatch(
     {
+      #Use the function to create a table with overdue payments and add spaces in the names of their columns
       addWhitespaces(notPaid(vals, data, time_period), kind = kind)
     },
     error=function(cond) {
+      #Checking whether monthly or annual payments are taken into account and creating appropriate blank tables for the selected option
       if(time_period == "month"){
         col_names = c("Imie","Nazwisko","Imie opiekuna","Nazwisko opiekuna", "Numer opiekuna",
                       "Email opiekuna","Daty bez wpłat","Ile zaległych wpłat")
@@ -78,12 +102,16 @@ tables_exists_verification <- function(vals, data, time_period, kind) {
   )
 }
 
+#Checking if there are any files on the dropbox
 files_exists_verification <- function(path){
 
+  #Catching the bugs
   files <- tryCatch(
     {
+      #Create data tables containing information about the files
       data.table(Nazwa = drop_dir(path)$name,Rozmiar = paste(round(drop_dir(path)$size *10^-6,3), "MB"))
     },
+    #In case of errors, create empty data tables
     error=function(cond) {
       
       col_names = c("Nazwa", "Rozmiar")
@@ -98,25 +126,34 @@ files_exists_verification <- function(path){
   
 }
 
+#Checking if there are any dates without any deposits to display
 paymentsPlot_cols_exists_vericifaction <- function(data, year, currentMonth, currentYear, prevDates = 2, nextDates = 2){
+  
+  #Catching the bugs
   data <- tryCatch(
     {
+      #Distinction into columns for annual and monthly contributions
       if(year){
+        #Select rows for annual contributions from the current year and those in which not all contributions have been made
         data = data[grep("-", data$Date, invert = year),]
         data$Date = data$Date %>% as.character() %>% as.numeric()
         toDisplay = data[data$Date == currentYear,]
-        verifyDisplay = data[!(data$Date >= currentYear - prevDates & data$Date <= currentYear + nextDates),] %>% .[!(.$Not_paid == 0 & .$Part_paid == 0),]
+        verifyDisplay = data[!(data$Date == currentYear),] %>% .[!(.$Not_paid == 0 & .$Part_paid == 0),]
       } else {
+        #Select rows for monthly deposits from the current month +/- "nextDates"/"prevDates" and those in which not all deposits have been made
         data = data[grep("-", data$Date, invert = year),] %>% separate(Date,c("Month","Year") ,"-", remove = FALSE)
         data$Month = as.numeric(data$Month)
-        toDisplay = data[data$Month >= currentDate - prevDates & data$Month <= currentMonth + nextDates & data$Year == currentYear,]
-        verifyDisplay = data[!(data$Month >= currentDate - prevDates & data$Month <= currentMonth + nextDates & data$Year == currentYear),] %>% .[!(.$Not_paid == 0 & .$Part_paid == 0),]
+        toDisplay = data[data$Month >= currentMonth - prevDates & data$Month <= currentMonth + nextDates & data$Year == currentYear,]
+        verifyDisplay = data[!(data$Month >= currentMonth - prevDates & data$Month <= currentMonth + nextDates & data$Year == currentYear),] %>% .[!(.$Not_paid == 0 & .$Part_paid == 0),]
       }
       
+      #If there are missing deposits in the "remote" dates, add them to the data table that will be displayed
       if(nrow(verifyDisplay) != 0)
         toDisplay = rbind(verifyDisplay, toDisplay)
+      #Delete added columns 'Month' and 'Year'
       toDisplay[,!(colnames(toDisplay) %in% c("Month", "Year"))]
     },
+    #In case of errors, create empty data table
     error=function(cond) {
       col_names = c("Paid", "Not_paid", "Part_paid", "Date")
       setNames(data.frame(matrix(ncol = length(col_names), nrow = 0)),col_names)
@@ -126,6 +163,7 @@ paymentsPlot_cols_exists_vericifaction <- function(data, year, currentMonth, cur
   return(data)
 }
 
+#Selecting the columns is the display on the graph (Dashboard)
 select_paymentsPlot_cols <- function(data,prevDates =2, nextDates = 2, currentMonth,currentYear) {
   
   toDisplay_year = paymentsPlot_cols_exists_vericifaction(data = data, year = TRUE, currentMonth = currentMonth, currentYear = currentYear, prevDates = prevDates, nextDates = nextDates)
@@ -144,9 +182,7 @@ column <- function(width, ..., offset = 0) {
   shiny::div(class = colClass, ...)
 }
 
-USPersonalExpenditure <- data.frame("Categorie"=rownames(USPersonalExpenditure), USPersonalExpenditure)
-data <- USPersonalExpenditure[,c('Categorie', 'X1960')]
-
+#Creating a confirmation alert
 confirmAlert <- function(session,button_labels, inputId, title, type = NULL) {
   confirmSweetAlert(
     session = session,
@@ -157,6 +193,7 @@ confirmAlert <- function(session,button_labels, inputId, title, type = NULL) {
   )
 }  
 
+#Creating a information alert
 informationAlert <- function(session,title, type = "success") {
   sendSweetAlert(
     session = session,
@@ -165,12 +202,13 @@ informationAlert <- function(session,title, type = "success") {
   )
 }
 
+#Creating a delete buttons for Files tab
 deleteDownloadButtons <- function(df, id, ...) {
-  # function to create one action button as string
+  #Function to create one action button as string
   deleteButton <- function(i) {
     as.character(
       actionButton(
-        # The id prefix with index
+        #The id prefix with index
         paste(id, i, sep="_"),
         label = NULL,
         icon = icon('trash'),
@@ -201,22 +239,13 @@ deleteDownloadButtons <- function(df, id, ...) {
                 ))
 }
 
+#Return at which row the delete or download button was pressed
 parseDeleteDownloadEvent <- function(idstr) {
   res <- as.integer(sub(".*_([0-9]+)", "\\1", idstr))
   if (! is.na(res)) res
 }  
 
-findMatch <- function(df,df2) {
-  theSame = c()
-  for(i in 1:nrow(df2)){
-    for(j in 1:nrow(df)){
-      if(all_equal(df[j,],df2[i,]) == TRUE)
-        theSame = c(theSame, j)
-    }
-  }
-  return(theSame)
-}
-
+#Creating a picker with the column names contained in the data
 addPayments_picker <- function(inputId, label, type, data,multiple = TRUE){
   pickerInput(
     inputId = inputId, 
@@ -231,11 +260,16 @@ addPayments_picker <- function(inputId, label, type, data,multiple = TRUE){
   )
 }
 
+#Replacement of the included payment columns with their verbal representation
 addPayments_choices <- function(type, data){
+  
+  #Create a vector with the verbal equivalents of months and choose the names of columns concerning payments from the data
   months = c("Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień",
              "Październik", "Listopad", "Grudzień")
   choices_all= sort_columns(data, FALSE,kind="wplata")
   
+  #Checking whether monthly or annual payments are taken into account and
+  #replacing the names of the columns with affordable representations to be used as elections
   if(type == "month"){
     choices = choices_all[!choices_all %in% grep(paste0("roczna", collapse = "|"), choices_all, value = TRUE)]
     choices = gsub("_", " ", gsub("wplata_", "", choices))
@@ -248,6 +282,7 @@ addPayments_choices <- function(type, data){
   return(choices)
 }
 
+#Creating a picker with the groups contained in the data
 addToGroups_picker <- function(inputId, label, data,multiple = TRUE,selected = NULL){
   pickerInput(
     inputId = inputId, 
@@ -344,11 +379,6 @@ clients_picker <- function(inputId, label, data){
     ), 
     multiple = TRUE
   )
-}
-
-isValidEmail <- function(x) {
-  grepl("\\<[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\>", as.character(x), 
-        ignore.case=TRUE)
 }
 
 sort_columns <- function(data, sorting_for_dataFrame = TRUE, kind){
@@ -572,8 +602,8 @@ clients_and_payments_writeTable_edit <- function(clients_ALL, payments_ALL, data
   return(list(clients = clients_ALL, payments = payments_ALL))
 }
 
-clients_and_payments_writeTable_delete <- function(clients_ALL, payments_ALL, data, user_id, group) {
-  data_ALL = clients_and_payments_separating(data)
+clients_and_payments_writeTable_delete <- function(clients_ALL, payments_ALL, data, user_id, group, kind) {
+  data_ALL = clients_and_payments_separating(data, kind = kind)
   
   clients_ALL[which(clients_ALL$id_uczestnika %in% data_ALL$clients$id_uczestnika & clients_ALL$id_uzytkownika %in% data_ALL$clients$id_uzytkownika),] = data_ALL$clients
   payments_ALL = payments_ALL[!(payments_ALL$id_uzytkownika == user_id & payments_ALL$grupa == group),]
@@ -581,29 +611,31 @@ clients_and_payments_writeTable_delete <- function(clients_ALL, payments_ALL, da
   return(list(clients = clients_ALL, payments = payments_ALL))
 }
 
-data_infos_dataTable <- function(data, kind) {
-  datatable(addWhitespaces(data[,!grepl("wplata|id_",colnames(data))], kind = kind), extensions = c ("Responsive", "Buttons"),editable = TRUE, options = list(dom = 'Bfrtip',
-                                                                                                                                                                              buttons = list(list(extend = "collection", text = 'Dodaj',
-                                                                                                                                                                                                  action = DT::JS("function ( e, dt, node, config ) {
-                                  Shiny.setInputValue('addObservation', true, {priority: 'event'});}")),
-                                                                                                                                                                                             list(extend = "collection", text = 'Usuń',
-                                                                                                                                                                                                  action = DT::JS("function ( e, dt, node, config ) {
-                                       Shiny.setInputValue('deleteObservation', true, {priority: 'event'});}")))))
+data_infos_dataTable <- function(data, kind, disable_toEdit_cols) {
+  datatable(addWhitespaces(data[,!grepl("wplata|id_",colnames(data))], kind = kind), extensions = c ("Responsive", "Buttons"),
+            editable = list(target = 'cell', disable = list(columns = disable_toEdit_cols)), options = list(dom = 'Bfrtip',
+             buttons = list(list(extend = "collection", text = 'Dodaj',
+             action = DT::JS("function ( e, dt, node, config ) {
+             Shiny.setInputValue('addObservation', true, {priority: 'event'});}")),
+             list(extend = "collection", text = 'Usuń',
+             action = DT::JS("function ( e, dt, node, config ) {
+             Shiny.setInputValue('deleteObservation', true, {priority: 'event'});}")))))
 }
 
-data_payments_dataTable <- function(data, kind) {
-  datatable(addWhitespaces(sort_columns(data,kind = kind),kind = kind), extensions = c ("Responsive"),editable = TRUE)
+data_payments_dataTable <- function(data, kind, disable_toEdit_cols) {
+  datatable(addWhitespaces(sort_columns(data,kind = kind),kind = kind), extensions = c ("Responsive"),
+            editable = list(target = 'cell', disable = list(columns = disable_toEdit_cols)))
 }
 
 id_filter <- function(data, column, id){
   return(data %>% filter(.[[column]] == id))
 }
 
-append_rows_files <- function(session, clients_ALL, payments_ALL, fileData, clientsData, group, connection, clientsTable_name,paymentsTable_name){
+append_rows_files <- function(session, clients_ALL, payments_ALL, fileData, clientsData, group, connection, clientsTable_name,paymentsTable_name, kind){
   #Verifying the correctness of the file and entering it into the database
   data = file_compliance(session, clients_ALL, payments_ALL, fileData, clientsData, group)
   if(!is.null(data)) {
-    append_data = clients_and_payments_separating(data)
+    append_data = clients_and_payments_separating(data, kind = kind)
     if(nrow(match_df(clients_ALL[,-grep("id_", colnames(clients_ALL))],append_data$clients[,-grep("id_", colnames(clients_ALL))])) != nrow(append_data$clients)) {
       identical_rows = as.numeric(rownames(match_df(append_data$clients[,-grep("id_", colnames(append_data$clients))],clients_ALL[,-grep("id_", colnames(clients_ALL))])))
       if(length(identical_rows) != 0) {
@@ -692,27 +724,21 @@ server = function(input, output, session ){
   notpaid_all_reactive = reactiveValues(data = NULL)
   number_of_clients_reactive = reactiveValues(data = NULL)
   
-  
-  #observe({
-   # if(!is.null(input$selectGroup_sidebar))
-  #  clients$data = dbReadTable(databaseConnection, "uczestnicy") %>% filter(.[["grupa"]] == input$selectGroup_sidebar)
-  #})
-  
   observe({
     if(!is.null(res_auth$id)){
-      clients = id_filter(clients_ALL$data, "id_uzytkownika", res_auth$id)
+      clients_selected = id_filter(clients_ALL$data, "id_uzytkownika", res_auth$id)
       payments = id_filter(payments_ALL$data, "id_uzytkownika", res_auth$id)
       schoolRegister = id_filter(schoolRegister_ALL$data, "id_uzytkownika", res_auth$id)
       
       if(!is.null(input$selectGroup_sidebar)){
-        clients = clients[clients$grupa %like% input$selectGroup_sidebar,]
+        clients_selected = clients_selected[clients_selected$grupa %like% input$selectGroup_sidebar,]
         payments = payments[payments$grupa %like% input$selectGroup_sidebar,]
         schoolRegister = schoolRegister[schoolRegister$grupa %like% input$selectGroup_sidebar,]
       }
       
-      clients$data <<- clients_and_payments_merging(clients,payments)
-      clients_presence$data <<- clients_and_payments_merging(clients,schoolRegister)
-
+      clients$data <<- clients_and_payments_merging(clients_selected,payments)
+      clients_presence$data <<- clients_and_payments_merging(clients_selected,schoolRegister)
+      
       templatesData$data = id_filter(templatesData_ALL$data, "id_uzytkownika", res_auth$id)
       groups$data = id_filter(groups_ALL$data, "id_uzytkownika", res_auth$id)
       depositAmount$data = id_filter(depositAmount_ALL$data, "id_uzytkownika", res_auth$id)
@@ -996,7 +1022,7 @@ server = function(input, output, session ){
     #Save data in reactive value
     excelData$data <- file_exists_verification(input$excelFile$datapath, "xlsx")
     
-    append_rows_files(session, clients_ALL$data, payments_ALL$data, excelData$data, clients$data,input$selectGroup_sidebar,"uczestnicy","wplaty",databaseConnection)
+    append_rows_files(session, clients_ALL$data, payments_ALL$data, excelData$data, clients$data,input$selectGroup_sidebar,"uczestnicy","wplaty",databaseConnection, kind = "wplata")
       
     clients_ALL$data = dbReadTable(databaseConnection, "uczestnicy")
     payments_ALL$data = dbReadTable(databaseConnection, "wplaty")
@@ -1007,7 +1033,7 @@ server = function(input, output, session ){
     #Save data in reactive value
     csvData$data <- file_exists_verification(input$csvFile$datapath, "csv")
     
-    append_rows_files(session, clients_ALL$data, payments_ALL$data, csvData$data, clients$data,input$selectGroup_sidebar,"uczestnicy","wplaty",databaseConnection)
+    append_rows_files(session, clients_ALL$data, payments_ALL$data, csvData$data, clients$data,input$selectGroup_sidebar,"uczestnicy","wplaty",databaseConnection, kind = "wplata")
     
     clients_ALL$data = dbReadTable(databaseConnection, "uczestnicy")
     payments_ALL$data = dbReadTable(databaseConnection, "wplaty")
@@ -1016,27 +1042,21 @@ server = function(input, output, session ){
   
   #Display clients data /include responsive design and (action, delete) buttons
   output$datasetTable = renderDataTable({
-    data_infos_dataTable(clients$data,kind="wplata")
+    data_infos_dataTable(clients$data,kind="wplata", grep("grupa", colnames(clients$data)[!grepl("wplata|id_", colnames(clients$data))]))
   })
   
   #Edit cells at data table by click
   observeEvent(input$datasetTable_cell_edit, {
     edited_column = colnames(clients$data[,!grepl("wplata|id_",colnames(clients$data))][,input$datasetTable_cell_edit$col, drop = FALSE])
-    if(edited_column != "grupa") {
-      clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- input$datasetTable_cell_edit$value
+    
+    clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- input$datasetTable_cell_edit$value
       
-      data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, payments_ALL$data,clients$data,input$selectGroup_sidebar, kind = "wplata")
-      dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)  
-      dbWriteTable(databaseConnection, "wplaty", data_ALL$payments, overwrite = TRUE)
+    data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, payments_ALL$data,clients$data,input$selectGroup_sidebar, kind = "wplata")
+    dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)  
+    dbWriteTable(databaseConnection, "wplaty", data_ALL$payments, overwrite = TRUE)
       
-      clients_ALL$data = dbReadTable(databaseConnection, "uczestnicy")
-      payments_ALL$data = dbReadTable(databaseConnection, "wplaty")
-    } else {
-      output$datasetTable = renderDataTable({
-        data_infos_dataTable(clients$data,kind="wplata")
-      })
-      informationAlert(session, "Nie można edytować kolumny dotyczącej grup", type = "warning")
-    }
+    clients_ALL$data = dbReadTable(databaseConnection, "uczestnicy")
+    payments_ALL$data = dbReadTable(databaseConnection, "wplaty")
     
     })
   
@@ -1120,7 +1140,7 @@ server = function(input, output, session ){
     if(input$confirmDeleteRows){
       del_ind <- clients$data$id_uczestnika[as.numeric(input$datasetTable_rows_selected)]
       clients$data = clients$data[!(clients$data$id_uczestnika %in% del_ind),]
-      data_ALL = clients_and_payments_writeTable_delete(clients_ALL$data, payments_ALL$data, del_ind, res_auth$id, input$selectGroup_sidebar)
+      data_ALL = clients_and_payments_writeTable_delete(clients_ALL$data, payments_ALL$data, del_ind, res_auth$id, input$selectGroup_sidebar, "wplata")
       
       dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)
       dbWriteTable(databaseConnection, "wplaty", data_ALL$payments, overwrite = TRUE)
@@ -1135,7 +1155,7 @@ server = function(input, output, session ){
   
   #Create date picker for "add payments" button
   output[["deleteGroupPicker"]] <- renderUI({
-    deleteGroups_picker("deleteGroupsList", "Wybierz grupę", groups$data)
+    addToGroups_picker("deleteGroupsList", "Wybierz grupę", groups$data)
   })
   
   #Show modal with form after "add payment" button was pushed / includes clients picker
@@ -1335,7 +1355,6 @@ server = function(input, output, session ){
   
   #If the user approves the deletion, delete the selected columns
   observeEvent(input$deleteGroup, {
-    
     if(is.null(input$deleteGroupsList)){
       informationAlert(session, "Nie wybrano grup", type = "warning")
     } else if("wszyscy" %in% input$deleteGroupsList){
@@ -1349,7 +1368,7 @@ server = function(input, output, session ){
           x[!(x %in% val)]
         }}) %>% unlist()
       clients$data$grupa = new_groups
-      data_ALL = clients_and_payments_writeTable_delete(clients_ALL$data, payments_ALL$data,clients$data,res_auth$id,input$deleteGroupsList)
+      data_ALL = clients_and_payments_writeTable_delete(clients_ALL$data, payments_ALL$data,clients$data,res_auth$id,input$deleteGroupsList,"wplata")
       
       #Save the data to the database and inform the user about the successful operation
       dbWriteTable(databaseConnection, "grupy", groups_ALL$data, overwrite = TRUE)
@@ -1367,7 +1386,7 @@ server = function(input, output, session ){
   
   #Display clients data /include responsive design and (action, delete) buttons
   output$paymentsTable = renderDataTable({
-    data_payments_dataTable(clients$data,kind="wplata")
+    data_payments_dataTable(clients$data,kind="wplata", grep("wplata",colnames(sort_columns(clients$data,kind="wplata")),fixed= TRUE,invert = TRUE))
     })
   
   #Edit cells at data table by click
@@ -1376,7 +1395,6 @@ server = function(input, output, session ){
 
     cell_edit_value = str_replace(input$paymentsTable_cell_edit$value, ",", ".")
     
-    if(grepl("wplata",edited_column,fixed= TRUE)){
       if(!is.na(as.numeric(cell_edit_value))) {
         if((as.numeric(cell_edit_value) >= 0) & (as.numeric(cell_edit_value) <= 4*MonthPayment()))
           clients$data[[edited_column]][input$paymentsTable_cell_edit$row] <<- round(as.numeric(cell_edit_value),2)
@@ -1390,13 +1408,6 @@ server = function(input, output, session ){
           })
           informationAlert(session, "Podaba wartość musi być liczbą", type = "warning")
         }
-        
-    } else {
-      output$paymentsTable = renderDataTable({
-        data_payments_dataTable(clients$data,kind="wplata")
-      })
-      informationAlert(session, "Można edytować wyłącznie wartości w kolumnach wpłat", type = "warning")
-    }
     
     data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, payments_ALL$data,clients$data,input$selectGroup_sidebar, kind = "wplata")
     dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)  
@@ -1705,7 +1716,8 @@ server = function(input, output, session ){
   ###################################School register###############################
   #create datatable with sorted presences columns
   output$schoolRegister_dataTable = renderDataTable({
-    data_payments_dataTable(clients_presence$data,kind="obecnosc")
+    data_payments_dataTable(clients_presence$data,kind="obecnosc",
+                            grep("obecnosc",colnames(sort_columns(clients_presence$data,kind="obecnosc")),fixed= TRUE,invert = TRUE))
   })
   
   #Create date picker for "add presences" button
@@ -1825,6 +1837,7 @@ server = function(input, output, session ){
       )
     ))
   })
+  
   #If you confirm the addition of a column, add a column with the corresponding date filled with zeros
   observeEvent(input$addPresenceColumn, {
     if(is.null(input$addColumns_datesList_presences)){
@@ -1940,7 +1953,6 @@ server = function(input, output, session ){
     edited_column = colnames(sort_columns(clients_presence$data,kind="obecnosc")[,input$schoolRegister_dataTable_cell_edit$col, drop = FALSE])
     
     #Checking for payments columns that the value entered is a number and is greater or equal 0 if it does not assign -1
-    if(grepl("obecnosc",edited_column,fixed= TRUE)){
       if(!is.na(as.numeric(input$schoolRegister_dataTable_cell_edit$value))) {
         if(as.numeric(input$schoolRegister_dataTable_cell_edit$value) >= 0) {
           clients_presence$data[[edited_column]][input$schoolRegister_dataTable_cell_edit$row] <<- round(as.numeric(input$schoolRegister_dataTable_cell_edit$value),0)
@@ -1958,12 +1970,7 @@ server = function(input, output, session ){
         })
         informationAlert(session, "Podana wartość musi być liczbą", type = "warning")
       }
-    } else {
-      output$schoolRegister_dataTable = renderDataTable({
-        data_payments_dataTable(clients_presence$data,kind="obecnosc")
-      })
-      informationAlert(session, "Można edytować wyłącznie wartości w kolumnach obecności", type = "warning")
-    }
+      
     data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, schoolRegister_ALL$data,clients_presence$data,input$selectGroup_sidebar, kind = "obecnosc")
     dbWriteTable(databaseConnection, "uczestnicy", data_ALL$clients, overwrite = TRUE)  
     dbWriteTable(databaseConnection, "obecnosci", data_ALL$payments, overwrite = TRUE)
