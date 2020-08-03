@@ -20,6 +20,8 @@ controlbar = bs4DashControlbar(
   
   uiOutput("monthPayment_input"),
   uiOutput("yearPayment_input"),
+  uiOutput("monthPayment_input_max"),
+  uiOutput("yearPayment_input_max"),
   div(style="text-align: center;",actionButton("globalChanges", "Zapisz zmiany", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")),
   uiOutput("selectedGroup"),
   br()
@@ -342,7 +344,7 @@ paymentsData = fluidRow(
     solidHeader = FALSE,
     dataTableOutput("paymentsTable"),
     br(),
-    actionButton("addPayments", "Dodaj wpłate", style="color: #fff; background-color: #337ab7; border-color: #2e6da4"),
+    actionButton("addPayments", "Dodaj wpłatę", style="color: #fff; background-color: #337ab7; border-color: #2e6da4"),
     actionButton("addPaymentsPicker", "Dodaj wpłate wybranym", style="color: #fff; background-color: #337ab7; border-color: #2e6da4"),
     actionButton("managePaymentsColumn", "Zarządzaj kolumnami wpłat", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
   )
