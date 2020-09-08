@@ -44,3 +44,4 @@ The application was developed for the management of associations' clients.  The 
 ## Contributors
 
 - **Mateusz Jałocha** (mat.jalocha@gmail.com, https://www.linkedin.com/in/mateusz-jałocha-8942701b6/)
+- **Estera Saidło** (https://github.com/EsteraSaidlo, https://www.linkedin.com/in/estera-saidło-b6882a1b5/)
