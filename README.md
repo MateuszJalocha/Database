@@ -1,6 +1,6 @@
 # Database
 
-The application was developed for the management of associations' clients.  The main goal is to support the registration of attendance and payments, however, it also provides a number of additional functionalities, which are listed below. Currently, at https://matjalocha.shinyapps.io/Database you can use the "beta" version using a trial account (**login:** admin, **password:** 123). The following screenshots show the application layout.
+The application was developed for the management of associations clients.  The main goal is to support the registration of attendance and payments, however, it also provides a number of additional functionalities, which are listed below. Currently, at https://matjalocha.shinyapps.io/Database you can use the "beta" version using a trial account (**login:** admin, **password:** 123). The following screenshots show the application layout.
 
 <p align="center">
 <img align = "center" src ="Images/database_Dashboard.png" />
