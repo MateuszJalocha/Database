@@ -84,7 +84,6 @@ notPaid <- function(vals, data, time_period) {
 #Verification whether tables with overdue payments exist
 tables_exists_verification <- function(vals, data, time_period, kind) {
   
-  #Checking for errors
   data <- tryCatch(
     {
       #Use the function to create a table with overdue payments and add spaces in the names of their columns
@@ -112,7 +111,7 @@ files_exists_verification <- function(path){
   files <- tryCatch(
     {
       #Create data tables containing information about the files
-      data.table(Nazwa = drop_dir(path)$name,Rozmiar = paste(round(drop_dir(path)$size *10^-6,3), "MB"))
+      data.table(Nazwa = drop_dir(path, dtoken = token)$name,Rozmiar = paste(round(drop_dir(path, dtoken = token)$size *10^-6,3), "MB"))
     },
     #In case of errors, create empty data tables
     error=function(cond) {
@@ -287,10 +286,15 @@ addPayments_choices <- function(type, data, kind){
 
 #Creating a picker with the groups contained in the data
 groups_picker <- function(inputId, label, data,multiple = TRUE,selected = NULL){
+  if(is.null(ncol(data))){
+    choices = data
+  } else{
+    choices = data$grupa
+  }
   pickerInput(
     inputId = inputId, 
     label = label, 
-    choices = unique(unlist(data$grupa)), 
+    choices = unique(unlist(choices)), 
     selected = selected,
     options = list(
       `actions-box` = TRUE, 
@@ -551,14 +555,14 @@ notPaid_partPaid_paid_plot <- function(data, current_year,MonthPayment, YearPaym
 
 #Verification whether the file can be loaded
 file_exists_verification <- function(path, file_type){
-  
+
   #Checking for errors
   file <- tryCatch(
     {
-      if(file_type == "xlsx") 
-        read_xlsx(path)%>% .[complete.cases(.), ]
+      if(file_type == "xlsx")
+        read.xlsx(path, 1, encoding = "UTF-8") %>% .[rowSums( is.na(.) ) < ncol(.), ]
       else
-        read.csv(path,sep = ";") %>% .[complete.cases(.), ]
+        read.csv(path,sep = ";") %>% .[rowSums( is.na(.) ) < ncol(.), ]
     },
     error=function(cond) {
       NULL
@@ -567,35 +571,43 @@ file_exists_verification <- function(path, file_type){
 }
 
 #Verifying the correctness of the file 
-file_compliance <- function(session,clients_ALL, file, data, group, kind) {
+file_compliance <- function(session,clients_ALL, file, data, group, kind,user_id) {
   #Assignment to variables: personal data, payments and presences columns
   data_infos = data %>% .[,-grep(paste0(kind,"|id_|grupa"), colnames(.))]
   payments_columns = data %>% .[,grep(kind, colnames(.)), drop = FALSE]
   
+  data_colnames = data %>% .[,-grep(paste0(kind,"|id_|grupa"), colnames(.))] %>% colnames()
+  
   #Checking that the file format is correct, the numbers of columns match and the names of the columns match
   if(is.numeric(file)){
     informationAlert(session,"Zły format pliku", type = "warning")
-  } else if(ncol(file) != ncol(data_infos)){
+  } else if(ncol(file) != length(data_colnames)){
     informationAlert(session,"Liczby kolumn się nie zgadzają", type = "warning")
-  } else if(length(setdiff(colnames(file), colnames(data_infos)))){
+  } else if(length(setdiff(colnames(file),data_colnames))){
     informationAlert(session,"Nazwy kolumn się nie zgadzają", type = "warning")
   } else{
-    
-    #Create columns with the appropriate "id_participant" number and columns with payments and presences filled in "-1"
-    id_columns = data %>% .[,grep("id_", colnames(.))]
-    id_columns[1:nrow(file),1] = seq(id_columns$id_uczestnika[length(id_columns$id_uczestnika)] + 1, id_columns$id_uczestnika[length(id_columns$id_uczestnika)] + nrow(file))
-    id_columns = id_columns[1:nrow(file),]
-    payments_columns[1:nrow(file),] = -1
-    payments_columns = payments_columns[1:nrow(file),]
-    
+    if(nrow(data)!=0){
+      #Create columns with the appropriate "id_participant" number and columns with payments and presences filled in "-1"
+      id_columns = data %>% .[,grep("id_", colnames(.))]
+      id_columns[1:nrow(file),1] = seq(id_columns$id_uczestnika[length(id_columns$id_uczestnika)] + 1, id_columns$id_uczestnika[length(id_columns$id_uczestnika)] + nrow(file))
+      id_columns = id_columns[1:nrow(file),]
+      payments_columns[1:nrow(file),] = -1
+      payments_columns = payments_columns[1:nrow(file),]
+    } else{
+      id_columns = data.frame("id_uczestnika" = seq(1, nrow(file)), "id_uzytkownika" = rep(user_id, nrow(file)))
+    }
     #Checking for errors
     data <- tryCatch(
       {
         #Convert date from file to "Date" format
         file$data_urodzenia = as.Date(file$data_urodzenia) %>% as.character()
         
-        #Create a data frame with the data contained in the uploaded file
-        new_data = data.frame(id_columns,imie = file$imie, nazwisko = file$nazwisko, grupa = rep(group, nrow(file)),file[,-which(colnames(file) %in% c("imie", "nazwisko"))],payments_columns)
+        if(nrow(payments_columns) != 0){
+          #Create a data frame with the data contained in the uploaded file
+          new_data = data.frame(id_columns,imie = file$imie, nazwisko = file$nazwisko, grupa = rep(group, nrow(file)),file[,-which(colnames(file) %in% c("imie", "nazwisko"))],payments_columns)
+        } else{
+          new_data = data.frame(id_columns,imie = file$imie, nazwisko = file$nazwisko, grupa = rep(group, nrow(file)),file[,-which(colnames(file) %in% c("imie", "nazwisko"))])
+        }
         rownames(new_data) = seq(nrow(clients_ALL) + 1, nrow(clients_ALL) + nrow(file))
         new_data
       },
@@ -610,20 +622,20 @@ file_compliance <- function(session,clients_ALL, file, data, group, kind) {
 #Adding data from the file to the database
 append_rows_files <- function(session, clients_ALL, payments_ALL, schoolRegister_ALL, fileData, clientsData, clientsData_presences, group, connection, clientsTable_name,paymentsTable_name, presencesTable_name,user_id){
   #Verifying the correctness of the file and entering it into the database
-  data = file_compliance(session,clients_ALL, fileData, clientsData, group, kind = "wplata")
-  data_presences = file_compliance(session,clients_ALL, fileData, clientsData_presences, group, kind = "obecnosc")
-  
+  data = file_compliance(session,clients_ALL, fileData, clientsData, group, kind = "wplata",user_id = user_id)
+  data_presences = file_compliance(session,clients_ALL, fileData, clientsData_presences, group, kind = "obecnosc", user_id = user_id)
   #Check if the data set is empty - if so, do nothing
   if(!is.null(data)) {
     #Separating data into two tables - (clients and payments & clients and presences)
     append_data = clients_and_payments_separating(data, kind = "wplata")
     append_data_presences = clients_and_payments_separating(data, kind = "obecnosc")
-    
     append_data$clients$data_urodzenia = append_data$clients$data_urodzenia %>% as.Date()
+    
     #Checking if the clients from the file are no longer in the database - If there are no customers in the file that are no longer in the database, inform the user
     if(nrow(match_df(clients_ALL[clients_ALL$id_uzytkownika == user_id,-grep("id_|grupa", colnames(clients_ALL))],append_data$clients[,-grep("id_|grupa", colnames(append_data$clients))])) < nrow(append_data$clients)) {
       #Assigning to a variable number of rows in which there are already existing customers in the database
-      identical_rows = as.numeric(rownames(match_df(clients_ALL[,-grep("id_", colnames(clients_ALL))],append_data$clients[,-grep("id_", colnames(append_data$clients))])))
+      identical_rows = as.numeric(rownames(match_df(append_data$clients[,-grep("id_", colnames(append_data$clients))],clients_ALL[,-grep("id_", colnames(clients_ALL))])))
+      
       #If there are recurring customers, do not add them to the database
       if(length(identical_rows) != 0) {
         #Selecting only non-repeating participants and giving them subsequent row names and id's
@@ -633,21 +645,24 @@ append_rows_files <- function(session, clients_ALL, payments_ALL, schoolRegister
         rownames(append_data$clients) = new_rownames[1:nrow(append_data$clients)]
         append_data$clients$id_uczestnika = new_userID[1:nrow(append_data$clients)]
       }
-      
+
       #Select only distinct observations from the file
       unique_rows = append_data$clients[,!grepl("grupa|id_",colnames(append_data$clients))] %>% distinct() %>% rownames()
-      append_data$clients = append_data$clients[as.numeric(unique_rows),]
-      append_data$payments = append_data$payments[which(append_data$payments$id_uczestnika == append_data$clients$id_uczestnika[as.numeric(unique_rows)]),]
+      append_data$clients = append_data$clients[-as.numeric(unique_rows),]
+      append_data$payments = append_data$payments[which(append_data$payments$id_uczestnika == as.numeric(unique_rows)),]
       append_data_presences$payments = append_data_presences$payments[which(append_data_presences$payments$id_uczestnika == append_data_presences$clients$id_uczestnika[as.numeric(unique_rows)]),]
-      
+
       #Correct row names and save tables with customer data and payments
-      rownames(append_data$payments) = seq(nrow(payments_ALL) + 1, nrow(payments_ALL) + nrow(append_data$payments))
-      rownames(append_data_presences$payments) = seq(nrow(payments_ALL) + 1, nrow(payments_ALL) + nrow(append_data_presences$payments))
-      rownames(append_data$clients) = seq(nrow(clients_ALL) + 1, nrow(clients_ALL) + nrow(append_data$clients))
+      if(nrow(append_data$payments) != 0)
+        rownames(append_data$payments) = seq(nrow(payments_ALL) + 1, nrow(payments_ALL) + nrow(append_data$payments))
+      if(nrow(append_data_presences$payments) != 0)
+        rownames(append_data_presences$payments) = seq(nrow(payments_ALL) + 1, nrow(payments_ALL) + nrow(append_data_presences$payments))
+      if(nrow(append_data$clients) != 0)
+        rownames(append_data$clients) = seq(nrow(clients_ALL) + 1, nrow(clients_ALL) + nrow(append_data$clients))
       
       return(list(clients = append_data$clients, payments = append_data$payments, presences = append_data_presences$payments))
     } else {
-      #If the data set is empty, inform the user that the clients from the file are already in the database
+      #If the dataset is empty, inform the user that the clients from the file are already in the database
       informationAlert(session,"Wszyscy z dodawanych klientów znajdują już się w bazie", type = "warning")
     }
   }
@@ -790,7 +805,7 @@ global_payments_validation <- function(session,year,maxYear,month,maxMonth, numb
 #Upload a file to Dropbox - used if the uploaded file has the same name as the one already uploaded
 replaceFile <- function(folderPath, file, session) {
   #Upload to Dropbox
-  drop_upload(file, folderPath)
+  drop_upload(file, folderPath, dtoken = token)
   
   informationAlert(session,"Plik został wgrany","success")
 }
@@ -866,7 +881,7 @@ addClient_function <- function(data, clientData, kind, clients_ALL, payments_ALL
   return(list(clients = clients_ALL, payments = payments_ALL))
 }
 
-#Check if the client is already in the database
+#Verify if the client is already in the database
 client_already_exist <- function(session,clients_ALL, append_data, information,user_id){
   append_data$data_urodzenia = append_data$data_urodzenia %>% as.Date()
   #Checking if the clients from the file are no longer in the database - If there are no customers in the file that are no longer in the database, inform the user
@@ -927,6 +942,8 @@ server = function(input, output, session ){
     surname = c(Credentials$nazwisko),
     image =  c(Credentials$image),
     img_url = c(Credentials$img_url),
+    gmail_passwd = c(Credentials$gmail_passwd),
+    to_email = c(Credentials$drugi_mail),
     clients_number = lapply(Credentials$id_uzytkownika, function(x, data = Clients){data %>% filter(.[["id_uzytkownika"]] == x) %>% nrow()}) %>% unlist() %>% c(),
     groups = lapply(Credentials$id_uzytkownika, function(x, data = Groups){data %>% filter(.[["id_uzytkownika"]] == x) %>% nrow()}) %>% unlist() %>% c()
   ))
@@ -951,10 +968,8 @@ server = function(input, output, session ){
         payments = payments[payments$grupa %like% Group_current$data,]
         schoolRegister = schoolRegister[schoolRegister$grupa %like% Group_current$data,]
       }
-      
       clients$data <<- clients_and_payments_merging(clients_selected,payments)
       clients_presence$data <<- clients_and_payments_merging(clients_selected,schoolRegister)
-      
       
       templatesData$data = id_filter(templatesData_ALL$data, "id_uzytkownika", res_auth$id)
       groups$data = id_filter(groups_ALL$data, "id_uzytkownika", res_auth$id)
@@ -990,7 +1005,7 @@ server = function(input, output, session ){
     dbWriteTable(databaseConnection,"grupy",Tonvarchar(groups_ALL$data,columns_names=c("grupa")), overwrite=T,field.types = c(grupa = "nvarchar(500)"))
   })
   
-  ###################################Files###############################
+  #OKKOMENTARZE##################################Files###############################
   #File input
   output[["fileInput"]] <- renderUI({
     input$uploadFile
@@ -1002,6 +1017,7 @@ server = function(input, output, session ){
     #File name correction
     file = file.rename(input$file$datapath, paste0(input$file$name))
     file = input$file$name
+    
     #Upload file to dropbox
     if(file %in% filesData$data$Nazwa){
       confirmAlert(session,c("Nie", "Tak"), "replaceFileConfirmation", "Plik o tej nazwie już istnieje, czy chcesz go zastąpić?")
@@ -1046,14 +1062,16 @@ server = function(input, output, session ){
   observeEvent(input$deleteFileConfirmation, {
     #Assign user decision to reactive variable
     deleteFile$delete <- input$deleteFileConfirmation
+    
     #Delete the Dropbox file and refresh files list
     if(deleteFile$delete)
     {
-      drop_delete(paste0(folderPath(),filesData$data$Nazwa[deleteFile$deleteRow]))
+      print(token)
+      drop_delete(paste0(folderPath(),filesData$data$Nazwa[deleteFile$deleteRow]),dtoken = token)
       filesData$data = files_exists_verification(folderPath())
       
-      updateFilePicker(session, "filesNames", drop_dir(folderPath())$name)
-      updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath())$name)
+      updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+      updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
       
     } else {
       informationAlert(session,"Plik nie został usunięty","error")
@@ -1069,14 +1087,14 @@ server = function(input, output, session ){
     rowNum <- parseDeleteDownloadEvent(input$downloadPressed)
   
     #Download file from Dropbox
-    drop_download(paste0(folderPath(),filesData$data$Nazwa[rowNum]),local_path = paste0("Downloads/",filesData$data$Nazwa[rowNum]),overwrite = TRUE)
+    drop_download(paste0(folderPath(),filesData$data$Nazwa[rowNum], dtoken = token),local_path = paste0("Downloads/",filesData$data$Nazwa[rowNum]),overwrite = TRUE)
     informationAlert(session,"Plik został pobrany","success")
   })
   
   #Update the files in pickerInput after uploading a new one
   observeEvent(input$uploadFile,{
-    updateFilePicker(session, "filesNames", drop_dir(folderPath())$name)
-    updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath())$name)
+    updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+    updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
   })
   
   #Render filesPicker to download multiple files with file names as choices
@@ -1084,7 +1102,7 @@ server = function(input, output, session ){
     pickerInput(
       inputId = "filesNames", 
       label = "Wybierz pliki do pobrania", 
-      choices = drop_dir(folderPath())$name, 
+      choices = drop_dir(folderPath(), dtoken = token)$name, 
       options = list(
         `actions-box` = TRUE, 
         size = 10,
@@ -1099,7 +1117,7 @@ server = function(input, output, session ){
     pickerInput(
       inputId = "filesNamesDelete", 
       label = "Wybierz pliki do usunięcia", 
-      choices = drop_dir(folderPath())$name, 
+      choices = drop_dir(folderPath(), dtoken = token)$name, 
       options = list(
         `actions-box` = TRUE, 
         size = 10,
@@ -1112,8 +1130,12 @@ server = function(input, output, session ){
   #Donload multiple files from Dropbox
   observeEvent(input$downloadFiles,{
     successDownloading = c()
+    
+    #Download files and verify how much you have successfully downloaded
     for(file in input$filesNames)
-      successDownloading = c(successDownloading,drop_download(paste0(folderPath(),file), overwrite = TRUE))
+      successDownloading = c(successDownloading,drop_download(paste0(folderPath(),file), overwrite = TRUE, dtoken = token))
+    
+    #Return information about downloading process
     if(sum(successDownloading) == 0)
       informationAlert(session,"Żaden z plików nie został pobrany","error")
     else if(sum(successDownloading) != length(successDownloading))
@@ -1125,16 +1147,17 @@ server = function(input, output, session ){
   #Delete multiple files at Dropbox
   observeEvent(input$deleteFiles,{
     for(file in input$filesNamesDelete)
-      drop_delete(paste0(folderPath(),file))
+      drop_delete(paste0(folderPath(),file), dtoken = token)
     
-    updateFilePicker(session, "filesNames", drop_dir(folderPath())$name)
-    updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath())$name)
+    #Upadte files informations
+    updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+    updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
     
     informationAlert(session,"Pliki zostały usunięte","success")
     filesData$data = files_exists_verification(folderPath())
   })
   
-  ###################################Mails###############################
+  #OKKOMENTARZE##################################Mails###############################
   #Save template to database
   observeEvent(input$saveTemplate,{
     if(input$templateNameCreate %in% templatesData$data$Name) {
@@ -1142,12 +1165,13 @@ server = function(input, output, session ){
     } else if(nchar(input$templateNameCreate) < 2){
       informationAlert(session, "Nazwa szablonu musi mieć co najmniej 3 znaki", type = "warning")
     }else {
+      #Add template to dataframe, write it to database and assign result of writing
       templatesData_ALL$data = rbind(templatesData_ALL$data, data.frame(id_uzytkownika = res_auth$id,Name = input$templateNameCreate, Body = input$templateBodyCreate)) 
       templatesData_ALL$data = templatesData_ALL$data[order(templatesData_ALL$data$id_uzytkownika),]
-      templateWritten = dbWriteTable(databaseConnection,"maile",Tonvarchar(templatesData_ALL$data,columns_names=c("Name","Body")), overwrite=T,field.types = c(Name = "nvarchar(500)", Body = "nvarchar(500)"),row.names = FALSE)
+      templateWritten = dbWriteTable(databaseConnection,"maile",Tonvarchar(templatesData_ALL$data,columns_names=c("Name","Body")), overwrite=T,field.types = c(Name = "nvarchar(500)", Body = "nvarchar(2000)"),row.names = FALSE)
       
       
-      #Check if template was written
+      #Verify if template was written
       if(templateWritten)
         informationAlert(session,"Szablon maila został zapisany","success")
       else
@@ -1157,7 +1181,7 @@ server = function(input, output, session ){
     
   })
   
-  #Release the "templates picker / edit section" with the names of the created templates  
+  #Render the "templates picker / edit section" with the names of the created templates  
   output[["templateNameEdit"]] <- renderUI ({
     pickerInput(
       inputId = "templateNameEdit", 
@@ -1172,7 +1196,7 @@ server = function(input, output, session ){
     )
   })
   
-  #Release the "templates body / edit section" with the names of the created templates  
+  #Render the "templates body / edit section" with the names of the created templates  
   output[["templateBodyEdit"]] <- renderUI ({
     textAreaInput("templateBodyEdit", "Szablon maila", templatesData$data$Body[which(templatesData$data$Name == input$templateNameEdit)], resize = "vertical") %>%
       shiny::tagAppendAttributes(style = 'width: 100%;')
@@ -1181,8 +1205,9 @@ server = function(input, output, session ){
   #Edit template body  
   observeEvent(input$editTemplate,{
     templatesData_ALL$data$Body[which(templatesData_ALL$data$id_uzytkownika == res_auth$id & templatesData_ALL$data$Name == input$templateNameEdit)] = input$templateBodyEdit
-    #Updating the displayed templates
-    templateEdited = dbWriteTable(databaseConnection,"maile",Tonvarchar(templatesData_ALL$data,columns_names=c("Name","Body")), overwrite=T,field.types = c(Name = "nvarchar(500)", Body = "nvarchar(500)"))
+    
+    #Write eddited templates to database and assign result of writing
+    templateEdited = dbWriteTable(databaseConnection,"maile",Tonvarchar(templatesData_ALL$data,columns_names=c("Name","Body")), overwrite=T,field.types = c(Name = "nvarchar(500)", Body = "nvarchar(2000)"))
     
     #Check if template was edited
     if(templateEdited)
@@ -1240,6 +1265,7 @@ server = function(input, output, session ){
   #Sending e-mail via gmail  
   observeEvent(input$sendMailConfirmation, {
     
+    #Id 3 is assign to trial account
     if(res_auth$id == 3){
       sendMailConfirmation$confirm <- FALSE
     } else {
@@ -1247,27 +1273,25 @@ server = function(input, output, session ){
       sendMailConfirmation$confirm <- input$sendMailConfirmation
     }
     
-    #Check if user want to send e-mail
     if(sendMailConfirmation$confirm)
     {
-      #If user have not selected any recipient show alert and clearconfirmation
+      #If user have not selected any recipient show alert and clear confirmation
       if(length(input$mailList) == 0)
       {
         informationAlert(session,"Musisz wybrać chociaż jednego odbiorcę maila","error")
         sendMailConfirmation$confirm <- NULL
-      }
-      #Else send e-mails via prepared account
-      else
+      } else
       {
         #Sending mail
-        send.mail(from = "yourMail",
-                  to = input$mailList,
+        send.mail(from = res_auth$email %>% as.character(),
+                  to = res_auth$to_email %>% as.character(),
+                  bcc = input$mailList,
                   subject = input$mailTitle,
                   body = input$mailBody,
                   encoding = 'utf-8',
-                  smtp = list(host.name = "yourHostname", port = 465,
-                              user.name = "yourMail",
-                              passwd = "yourPassword", ssl = TRUE),
+                  smtp = list(host.name = "smtp.gmail.com", port = 465,
+                              user.name = res_auth$email %>% as.character(),
+                              passwd = res_auth$gmail_passwd %>% as.character(), ssl = TRUE),
                   authenticate = TRUE,
                   send = TRUE)
         informationAlert(session,"Mail został wysłany","success")
@@ -1288,7 +1312,7 @@ server = function(input, output, session ){
     
   })
   
-  ###################################Data##############################
+  #OKKOMENTARZE##################################Data##############################
   
   #Upload excel file and join it with already uploaded data
   observeEvent(input$uploadExcelData,{
@@ -1296,10 +1320,12 @@ server = function(input, output, session ){
     excelData$data <- file_exists_verification(input$excelFile$datapath, "xlsx")
     
     if(!is.null(excelData$data)){
+      #Join existing dataframes about clients, presences and payments with informations included in excel file / check that the data is correct and that the observations are not repeated.
       append_rows = append_rows_files(session, clients_ALL$data, payments_ALL$data, schoolRegister_ALL$data, excelData$data, clients$data,clients_presence$data,
                                       Group,databaseConnection, "uczestnicy","wplaty", "obecnosci",res_auth$id)
       if(!is.null(append_rows)){
         
+        #If there are no observations about payments or presences number of columns is equal 3 else it is 5 
         if(ncol(append_rows$payments) == 5){
           payments_ALL$data = rbind(payments_ALL$data, append_rows$payments) %>% .[order(.$id_uzytkownika, .$data),]
           dbWriteTable(databaseConnection,"wplaty",Tonvarchar(payments_ALL$data,columns_names=c("grupa")), overwrite=T,field.types = c(grupa = "nvarchar(500)"))
@@ -1326,10 +1352,12 @@ server = function(input, output, session ){
     csvData$data <- file_exists_verification(input$csvFile$datapath, "csv")
     
     if(!is.null(csvData$data)){
+      #Join existing dataframes about clients, presences and payments with informations included in csv file / check that the data is correct and that the observations are not repeated.
       append_rows = append_rows_files(session, clients_ALL$data, payments_ALL$data, schoolRegister_ALL$data, csvData$data, clients$data,clients_presence$data,
                                       Group,databaseConnection, "uczestnicy","wplaty", "obecnosci",res_auth$id)
       if(!is.null(append_rows)){
         
+        #If there are no observations about payments or presences number of columns is equal 3 else it is 5
         if(ncol(append_rows$payments) == 5){
           payments_ALL$data = rbind(payments_ALL$data, append_rows$payments) %>% .[order(.$id_uzytkownika, .$data),]
           dbWriteTable(databaseConnection,"wplaty",Tonvarchar(payments_ALL$data,columns_names=c("grupa")), overwrite=T,field.types = c(grupa = "nvarchar(500)"))
@@ -1357,6 +1385,8 @@ server = function(input, output, session ){
   
   #Edit cells at data table by click
   observeEvent(input$datasetTable_cell_edit, {
+    
+    #Verify which columns have been edited and if they do not apply to payments or id's
     edited_column = colnames(clients$data[,!grepl("wplata|id_",colnames(clients$data))][,input$datasetTable_cell_edit$col, drop = FALSE])
     
     clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- input$datasetTable_cell_edit$value
@@ -1402,7 +1432,7 @@ server = function(input, output, session ){
   #Add client to database based on filled form
   observeEvent(input$addClient, {
     if(input$addName != "" & input$addSurname != "" & input$addGuardianName != "" & input$addGuardianSurname != "") {
-      #Temporary dataframe with informations about client
+      #Temporary dataframe with informations about client / if blanks are left fill them with "-"
       clientData = data.frame(clients$data$id_uczestnika[nrow(clients$data)] + 1, res_auth$id,input$addName,input$addSurname,Group,input$addPesel,as.character(input$addBirthDate),
                               input$addBirthPlace,input$addAddress,input$addPhone,input$addMail,input$addSchool,input$addGuardianName,
                               input$addGuardianSurname,input$addGuardianPhone,input$addGuardianMail, stringsAsFactors = FALSE)
@@ -1411,6 +1441,8 @@ server = function(input, output, session ){
       colnames(clientData) = clientsData_colnames[!clientsData_colnames %in% grep(paste0(kind, collapse = "|"), clientsData_colnames, value = T)]
       
       if(!is.null(client_already_exist(session,clients_ALL$data, clientData, "Klient znajduje się już bazie",res_auth$id))){
+        
+        #Add new client to an existing datatables 
         newClient_payments = addClient_function(clients$data, clientData, "wplata", clients_ALL$data, payments_ALL$data)
         newClient_presences = addClient_function(clients_presence$data, clientData, "obecnosc", clients_ALL$data, schoolRegister_ALL$data)
         
@@ -1418,6 +1450,7 @@ server = function(input, output, session ){
         
         clients_ALL$data <- dbReadTable(databaseConnection, "uczestnicy")
         
+        #If there are no observations about payments or presences number of columns is equal 3 else it is 5
         if(ncol(newClient_payments$payments) == 5){
           dbWriteTable(databaseConnection,"wplaty",Tonvarchar(newClient_payments$payments,columns_names=c("grupa")), overwrite=T,field.types = c(grupa = "nvarchar(500)"))
           payments_ALL$data <- dbReadTable(databaseConnection, "wplaty")
@@ -1446,9 +1479,11 @@ server = function(input, output, session ){
   #Delete selected rows on data table
   observeEvent(input$confirmDeleteRows, { 
     if(input$confirmDeleteRows){
+      #Remove clients by id
       del_ind <- clients$data$id_uczestnika[as.numeric(input$datasetTable_rows_selected)]
       clients$data = clients$data[!(clients$data$id_uczestnika %in% del_ind),]
       
+      #Remove payments and presences informations
       data_ALL = clients_and_payments_writeTable_delete(clients_ALL$data, payments_ALL$data,clients$data, res_auth$id, Group_current$data, "wplata", FALSE, del_ind)
       data_ALL_presences = clients_and_payments_writeTable_delete(clients_ALL$data, schoolRegister_ALL$data,clients$data, res_auth$id, Group_current$data, "obecnosc", FALSE, del_ind)
       
@@ -1463,26 +1498,27 @@ server = function(input, output, session ){
     }
   })
   
-  #Create date picker for "add payments" button
+  #Create date picker for "add groups" button
   output[["groupPicker"]] <- renderUI({
     groups_picker("groupsList", "Wybierz grupę", groups$data)
   })
   
-  #Create date picker for "add payments" button
+  #Create date picker for "edit groups" button / which do you want to edit (includes picker)
   output[["editUsersGroupsPicker"]] <- renderUI({
     groups_picker("editUsersGroups", "Wybierz grupę, która zostanie zamieniona", NULL, multiple = FALSE)
   })
   
-  #Create date picker for "add payments" button
+  #Create date picker for "edit groups" button / to which do you want to edit
   output[["editUsersGroupsPicker_2"]] <- renderUI({
     groups_picker("editUsersGroups_2", "Wybierz grupę na jaką zostanie dokonana zmiana", groups$data, multiple = FALSE)
   })
   
-  #Create date picker for "add payments" button
+  #Create date picker for "delete groups" button / includes picker
   output[["deleteUsersGroupPicker"]] <- renderUI({
     groups_picker("deleteUsersGroup", "Wybierz grupę", NULL)
   })
   
+  #Update picker input for editing groups for clients selected in pickers input / includes clients picker
   observeEvent(input$clientsListEditing, {
     if(!is.null(input$clientsListEditing)){
       picker_options = strsplit(clients$data$grupa[selectedClients_rows(clients$data, input$clientsListEditing)], ", ") %>%
@@ -1496,6 +1532,7 @@ server = function(input, output, session ){
     }
   }, ignoreNULL = FALSE)
   
+  #Update picker input for deleting groups for clients selected in pickers input / includes clients picker
   observeEvent(input$clientsListDeleting, {
     if(!is.null(input$clientsListDeleting)){
       picker_options = strsplit(clients$data$grupa[selectedClients_rows(clients$data, input$clientsListDeleting)], ", ") %>%
@@ -1510,7 +1547,7 @@ server = function(input, output, session ){
     }
   }, ignoreNULL = FALSE)
   
-  #Show modal with form after "add payment" button was pushed / includes clients picker
+  #Show modal with form after "add group" button was pushed / includes clients picker
   observeEvent(input$addToGroups, {
     showModal(modalDialog(
       title = "Zarządzaj grupami użytkowników",
@@ -1521,7 +1558,7 @@ server = function(input, output, session ){
         id = "manageUsersGroups_panel",
         side = "left",
         bs4TabPanel(
-          tabName = "Dodaj grupę",
+          tabName = "Dodaj grupę", #Add group
           active = TRUE,
           column(
             width = 12,
@@ -1532,7 +1569,7 @@ server = function(input, output, session ){
           )
         ),
         bs4TabPanel(
-          tabName = "Edytuj grupę",
+          tabName = "Edytuj grupę", #Edit group
           active = FALSE,
           column(
             width = 12,
@@ -1544,7 +1581,7 @@ server = function(input, output, session ){
           )
         ),
         bs4TabPanel(
-          tabName = "Usuń grupę",
+          tabName = "Usuń grupę", #Delete group
           active = FALSE,
           column(
             width = 12,
@@ -1559,7 +1596,7 @@ server = function(input, output, session ){
     ))
   })
   
-  #If you confirm the addition of a deposit, add based on the pesels of the amount / includes clients picker
+  #Add groups based on selected rows / includes clients picker
   observeEvent(input$addToGroups_confirm, {
     
     if(is.null(input$clientsList))
@@ -1588,6 +1625,7 @@ server = function(input, output, session ){
     
   })
   
+  #Edit groups based on selected rows / includes clients picker
   observeEvent(input$addToGroups_edit, {
     if(is.null(input$clientsListEditing))
     {
@@ -1614,6 +1652,7 @@ server = function(input, output, session ){
     
   })
   
+  #Delete groups based on selected rows / includes clients picker
   observeEvent(input$addToGroups_delete, {
     
     if(is.null(input$clientsListDeleting))
@@ -1640,73 +1679,81 @@ server = function(input, output, session ){
     
   })
   
-  observeEvent(input$datasetTable_rows_selected,{
+  #Show modal with form after "add group" button was pushed with priority 1 / user needs to mark the clients by click
+  observeEvent(input$addToGroupsPicker, priority = 1,{
     
-    if(!is.null(input$datasetTable_rows_selected)){
-      #Assign the selected rows to the variable
-      selected_rows = as.numeric(input$datasetTable_rows_selected)
-      
-      #Select only groups that repeat in all selected participants
-      picker_options = strsplit(clients$data$grupa[selected_rows], ", ") %>%
-        unlist() %>%
-        table() %>%
-        .[. == length(selected_rows)] %>%
-        names()
-      #Update
-      updatePickerInput(session = session,inputId = "editUsersGroups", choices = as.factor(picker_options))
-      updatePickerInput(session = session,inputId = "deleteUsersGroup", choices = picker_options)
-    }
-    #updatePickerInputs(session,input$datasetTable_rows_selected, clients$data$grupa,"editUsersGroups","deleteUsersGroup")
-  }, ignoreNULL = FALSE)
+    #Assign the selected rows to the variable
+    selected_rows = as.numeric(input$datasetTable_rows_selected)
+    
+    #Select only groups that repeat in all selected participants
+    options = strsplit(clients$data$grupa[selected_rows], ", ") %>%
+      unlist() %>%
+      table() %>%
+      .[. == length(selected_rows)] %>%
+      names()
   
-  #Show modal with form after "add payment" button was pushed / includes clients picker
-  observeEvent(input$addToGroupsPicker, {
+    #Create date picker for "edit groups" button / which do you want to edit (without picker)
+    output[["editUsersGroups_noPicker"]] <- renderUI({
+      groups_picker("editUsersGroups_noPicker", "Wybierz grupę, która zostanie zamieniona", options, multiple = FALSE)
+    })
     
-    showModal(modalDialog(
-      title = "Zarządzaj grupami użytkowników",
-      footer =  tagList(
-        modalButton("Wyjdź")
-      ),
-      bs4TabSetPanel(
-        id = "manageUsersGroupsPicker_panel",
-        side = "left",
-        bs4TabPanel(
-          tabName = "Dodaj grupę",
-          active = TRUE,
-          column(
-            width = 12,
-            offset = 2,
-            uiOutput("groupPicker"),
-            actionButton("addToGroupsPicker_confirm", "Dodaj", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
-          )
-        ),
-        bs4TabPanel(
-          tabName = "Edytuj grupę",
-          active = FALSE,
-          column(
-            width = 12,
-            offset = 2,
-            uiOutput("editUsersGroupsPicker"),
-            uiOutput("editUsersGroupsPicker_2"),
-            actionButton("addToGroupsPicker_edit", "Edytuj", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
-          )
-        ),
-        bs4TabPanel(
-          tabName = "Usuń grupę",
-          active = FALSE,
-          column(
-            width = 12,
-            offset = 2,
-            uiOutput("deleteUsersGroupPicker"),
-            actionButton("addToGroupsPicker_delete", "Usuń", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
-          )
-        )
-        
-      )
-    ))
+    #Create date picker for "delete groups" button / without picker
+    output[["deleteUsersGroup_noPicker"]] <- renderUI({
+      groups_picker("deleteUsersGroup_noPicker", "Wybierz grupę", options)
+    })
   })
   
-  #If you confirm the addition of a deposit, the payment will be added to the marked lines in data table / without clients picker
+  #Show modal with form after "add group" button was pushed with priority 0 / user needs to mark the clients by click
+  observeEvent(input$addToGroupsPicker, priority = 0,{
+    observe({
+      showModal(modalDialog(
+        title = "Zarządzaj grupami użytkowników",
+        footer =  tagList(
+          modalButton("Wyjdź")
+        ),
+        bs4TabSetPanel(
+          id = "manageUsersGroupsPicker_panel",
+          side = "left",
+          bs4TabPanel(
+            tabName = "Dodaj grupę", #Add group
+            active = TRUE,
+            column(
+              width = 12,
+              offset = 2,
+              uiOutput("groupPicker"),
+              actionButton("addToGroupsPicker_confirm", "Dodaj", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+            )
+          ),
+          bs4TabPanel(
+            tabName = "Edytuj grupę", #Edit group
+            active = FALSE,
+            column(
+              width = 12,
+              offset = 2,
+              uiOutput("editUsersGroups_noPicker"),
+              uiOutput("editUsersGroupsPicker_2"),
+              actionButton("addToGroupsPicker_edit", "Edytuj", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+            )
+          ),
+          bs4TabPanel(
+            tabName = "Usuń grupę", #Delete group
+            active = FALSE,
+            column(
+              width = 12,
+              offset = 2,
+              uiOutput("deleteUsersGroup_noPicker"),
+              actionButton("addToGroupsPicker_delete", "Usuń", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
+            )
+          )
+          
+        )
+      ))
+    })
+    
+    
+  })
+  
+  #Add groups, that will be added to the marked lines in data table / without clients picker
   observeEvent(input$addToGroupsPicker_confirm, {
     #Assign indexes of the marked lines
     selected_rows = as.numeric(input$datasetTable_rows_selected)
@@ -1721,6 +1768,7 @@ server = function(input, output, session ){
       
       #Add groups
       new_groups = lapply(strsplit(clients$data$grupa[selected_rows], ", "), function(x, val = input$groupsList){
+        #Verify which of the added groups have not already been assigned to clients
         if(length(val[!(val %in% x)]) != 0){
           paste(paste(x, collapse =", "), val[!(val %in% x)], sep = ", ")
         } else {
@@ -1736,6 +1784,7 @@ server = function(input, output, session ){
     }
   })
   
+  #Edit groups / without clients picker
   observeEvent(input$addToGroupsPicker_edit, {
     #Assign indexes of the marked lines
     selected_rows = as.numeric(input$datasetTable_rows_selected)
@@ -1765,6 +1814,7 @@ server = function(input, output, session ){
     
   })
   
+  #Delete groups / without clients picker
   observeEvent(input$addToGroupsPicker_delete, {
     #Assign indexes of the marked lines
     selected_rows = as.numeric(input$datasetTable_rows_selected)
@@ -1792,11 +1842,12 @@ server = function(input, output, session ){
     }
   })
   
-  #Create date picker for "add payments" button
+  #Create date picker for "delete group" (manage groups) button / generally not for specific clients
   output[["deleteGroupPicker"]] <- renderUI({
     groups_picker("deleteGroupsList", "Wybierz grupę", groups$data)
   })
   
+  #Create date picker for "edit group" (manage groups) button / generally not for specific clients
   output[["editGroupPicker"]] <- renderUI({
     groups_picker("groupsList", "Wybierz grupę", groups$data,FALSE)
   })
@@ -1812,7 +1863,7 @@ server = function(input, output, session ){
         id = "manageGroups_panel",
         side = "left",
         bs4TabPanel(
-          tabName = "Dodaj grupę",
+          tabName = "Dodaj grupę", #Add group
           active = TRUE,
           column(
             width = 12,
@@ -1822,7 +1873,7 @@ server = function(input, output, session ){
           )
         ),
         bs4TabPanel(
-          tabName = "Edytuj grupę",
+          tabName = "Edytuj grupę", #Edit group
           active = FALSE,
           column(
             width = 12,
@@ -1833,7 +1884,7 @@ server = function(input, output, session ){
           )
         ),
         bs4TabPanel(
-          tabName = "Usuń grupę",
+          tabName = "Usuń grupę", #Delete group
           active = FALSE,
           column(
             width = 12,
@@ -1847,7 +1898,7 @@ server = function(input, output, session ){
     ))
   })
   
-  #If you confirm the addition of a column, add a column with the corresponding date filled with zeros
+  #Add group to groups list / generally not for specific clients
   observeEvent(input$addGroup,{
     if(str_length(input$groupName)>15 | str_length(input$groupName) < 3) {
       informationAlert(session, "Nazwa grupy musi mieć pomiędzy 3 a 15 znaków", type = "warning")
@@ -1870,7 +1921,7 @@ server = function(input, output, session ){
     
   })
   
-  #If the user agrees to edit the column, change its date to the selected
+  #Edit group / both generally and for specific clients
   observeEvent(input$editGroup, {
     if(str_length(input$editGroupName)>15 | str_length(input$editGroupName) < 3) {
       informationAlert(session, "Nazwa grupy musi mieć pomiędzy 3 a 15 znaków", type = "warning")
@@ -1884,8 +1935,10 @@ server = function(input, output, session ){
       informationAlert(session, "Nie można edytować grupy 'wszyscy'", type = "warning")
     }else {
       
+      #Edit generally
       groups_ALL$data$grupa[groups_ALL$data$grupa == input$groupsList & groups_ALL$data$id_uzytkownika == res_auth$id] = input$editGroupName
       
+      #Edit for clients that are assigned to this group
       clients$data$grupa = str_replace(clients$data$grupa, input$groupsList, input$editGroupName)
       data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, payments_ALL$data,clients$data,Group_current$data,kind = "wplata",addGroups = FALSE)
       
@@ -1900,7 +1953,7 @@ server = function(input, output, session ){
     }
   })
   
-  #If the user approves the deletion, delete the selected columns
+  #Delete group / both generally and for specific clients
   observeEvent(input$deleteGroup, {
     if(is.null(input$deleteGroupsList)){
       informationAlert(session, "Nie wybrano grup", type = "warning")
@@ -1909,6 +1962,7 @@ server = function(input, output, session ){
     }else {
       groups_ALL$data = groups_ALL$data[!(groups_ALL$data$grupa == input$deleteGroupsList & groups_ALL$data$id_uzytkownika == res_auth$id),,drop = FALSE]
       new_groups = lapply(strsplit(clients$data$grupa, ", "), function(x, val = input$deleteGroupsList){
+        #Delete group for clients that are assigned to this group
         if(length(x[!(x %in% val)]) != 1){
           paste(x[!(x %in% val)], collapse =", ")
         } else {
@@ -1930,7 +1984,7 @@ server = function(input, output, session ){
     
   })
   
-  ###################################Payments###############################
+  #OKKOMENTARZE##################################Payments###############################
   
   #Display clients data /include responsive design and (action, delete) buttons
   output$paymentsTable = renderDataTable({
@@ -1947,6 +2001,8 @@ server = function(input, output, session ){
       restricion = MaxMonthPayment()
     
     cell_edit_value = str_replace(input$paymentsTable_cell_edit$value, ",", ".")
+    
+    #Add payments
     if(!is.na(as.numeric(cell_edit_value))) {
       if((as.numeric(cell_edit_value) >= 0) & (as.numeric(cell_edit_value) <= restricion)) {
         clients$data[[edited_column]][input$paymentsTable_cell_edit$row] <<- round(as.numeric(cell_edit_value),2)
@@ -2006,7 +2062,7 @@ server = function(input, output, session ){
     ))
   })
   
-  #If you confirm the addition of a deposit, add based on the pesels of the amount / includes clients picker
+  #If you confirm the addition of a deposit, add based on the selected rows the amount / includes clients picker
   observeEvent(input$addPayments_confirm, {
     
     if(is.null(input$clientsList))
@@ -2298,8 +2354,8 @@ server = function(input, output, session ){
     
   })
   
-  ###################################School register###############################
-  #create datatable with sorted presences columns
+  #OKKOMENTARZE##################################School register###############################
+  #Create datatable with sorted presences columns
   output$schoolRegister_dataTable = renderDataTable({
     data_payments_dataTable(clients_presence$data,kind="obecnosc",
                             grep("obecnosc",colnames(sort_columns(clients_presence$data,kind="obecnosc")),fixed= TRUE,invert = TRUE))
@@ -2349,7 +2405,7 @@ server = function(input, output, session ){
     ))
   })
   
-  #If you confirm the addition of a presence, add based on the pesels of the amount / includes clients picker
+  #If you confirm the addition of a presence, add based on the selected rows/ includes clients picker
   observeEvent(input$addPresences_confirm, {
     
     if(is.null(input$clientsList_presences))
@@ -2369,8 +2425,10 @@ server = function(input, output, session ){
       lapply(dates, function(x){
         selected_rows = selectedClients_rows(clients_presence$data, input$clientsList_presences)
         
+        #Maximum possible number of attendance
         max_presences_verification <<- selected_rows[which(clients_presence$data[selected_rows,x] == restriction)]
         
+        #Select only rows which do not have maximum number of attendance
         if(length(max_presences_verification) != 0) {
           selected_rows = selected_rows[!(selected_rows %in% max_presences_verification)]
         }
@@ -2537,9 +2595,12 @@ server = function(input, output, session ){
       
       #Add presences
       lapply(dates, function(x){
+        
+        #Maximum possible number of attendance
         max_presences_verification <<- selected_rows[which(clients_presence$data[selected_rows,x] == restriction)]
         
         if(length(max_presences_verification) != 0) {
+          #Select only rows which do not have maximum number of attendance
           selected_rows = selected_rows[!(selected_rows %in% max_presences_verification)]
         }
         clients_presence$data[selected_rows,x] =  clients_presence$data[selected_rows,x]+1
@@ -2593,8 +2654,9 @@ server = function(input, output, session ){
     
   })
   
-  ###################################Dashboard###############################
-  #Upload excel file
+  #OKKOMENTARZE##################################Dashboard###############################
+  
+  #Render current month payments to valueBox
   observe({
     output$paymentsSum_month = renderText({
       paymentsSum_month_reactive$data <- currentDate_exists_verification(clients$data, paste0("wplata_",format(Sys.Date(),"%m"),"_",format(Sys.Date(),"%Y")), "month","Suma wpłat w bieżącym miesiącu", MonthPayment())
@@ -2602,12 +2664,14 @@ server = function(input, output, session ){
     })
   })
   
+  #Render currency
   observe({
     output$paymentsSum_month_subtitle = renderText({
       paymentsSum_month_reactive$data[[2]]
     })
   })
   
+  #Render current year payments to valueBox
   observe({
     output$paymentsSum_year = renderText({
       paymentsSum_year_reactive$data <- currentDate_exists_verification(clients$data, paste0("wplata_roczna_",format(Sys.Date(),"%Y")), "year","Suma wpłat w bieżącym roku", YearPayment())
@@ -2615,12 +2679,14 @@ server = function(input, output, session ){
     })
   })
   
+  #Render currency
   observe({
     output$paymentsSum_year_subtitle = renderText({
       paymentsSum_year_reactive$data[[2]]
     })
   })
   
+  #Render total number of unpaid contributions
   observe({
     output$notpaid_all = renderText({
       notpaid_all_reactive$data <- anyDateCols_exists_verification(clients$data, 0,"Łączna liczba niedokonanych wpłat")
@@ -2628,12 +2694,15 @@ server = function(input, output, session ){
     })
   })
   
+  #Render currency
   observe({
     output$notpaid_all_subtitle = renderText({
       notpaid_all_reactive$data[[2]]
     })
   })
   
+  
+  #Render total number of customers
   observe({
     output$number_of_clients = renderText({
       number_of_clients_reactive$data <- clients_exists_verification(clients$data,"Liczba klientów")
@@ -2641,20 +2710,28 @@ server = function(input, output, session ){
     })
   })
   
+  #Render subtitle 
   observe({
     output$number_of_clients_subtitle = renderText({
       number_of_clients_reactive$data[[2]]
     })
   })
   
+  #Render plot of contributions
   observe({
+    #Verify that the user has logged in
     if(!is.null(res_auth$id)){
       output$barPlot_payments = renderPlotly({
         
+        #Assign to variables current year and month
         current_year = format(Sys.Date(), "%Y") %>% as.numeric()
         current_month = format(Sys.Date(), "%m") %>% as.numeric()
+        
+        #Prepare data to create a plot with people who have paid, failed to pay and paid a part of it
         data = notPaid_partPaid_paid_plot(sort_columns(clients$data,kind = "wplata"),current_year, MonthPayment(),YearPayment(), current_month)
         data = select_paymentsPlot_cols(data = data, prevDates = 2, nextDates = 2, currentMonth = ActualMonth, currentYear = ActualYear)
+        
+        #If there are no payments columns render empty plot
         if(nrow(data) == 0) {
           data = data.frame(Paid = 1, Date = "Brak danych")
           fig <- plot_ly(data, x = ~Date, y = ~Paid, type = 'bar', name = 'Brak danych') %>%
@@ -2673,6 +2750,7 @@ server = function(input, output, session ){
     }
   })
   
+  #Render calendar
   output$calendar <- renderCalendar({
     calendar(defaultView = "month")
   })
@@ -2715,8 +2793,7 @@ server = function(input, output, session ){
   #OKKOMENTARZE##################################User panel########################################
   #Redirect to the user panel by pressing the name and surname
   observeEvent(input$userPanelLink, {
-    download.file(drop_media("Baza Danych/b.jalocha00@gmail.com/cars.xlsx")$link, "plik")
-     #Selected UserPanelPosition because it is position of user panel at sidebar menu
+    #Selected UserPanelPosition because it is position of user panel at sidebar menu
     updatebs4TabItems(
       session,
       inputId = "sidebarMenu",
@@ -2792,7 +2869,7 @@ server = function(input, output, session ){
     confirmAlert(session,c("Nie", "Tak"), "confirmChangedData", "Potwierdzić wprowadzone zmiany?")
   })
   
-  #Change of user data
+  #Change the user data
   observeEvent(input$confirmChangedData, {
     res_auth$name = input$changeName
     res_auth$surname = input$changeSurname
@@ -2801,27 +2878,33 @@ server = function(input, output, session ){
     if(length(input$changeImg) != 0)
     {
       #Delete previous image from Dropbox
-      drop_delete(paste0("Baza Danych/Profilowe/",res_auth$email, "/",res_auth$image))
+      drop_delete(paste0("Baza Danych/Profilowe/",res_auth$email, "/",res_auth$image), dtoken = token)
       
       #File name correction
       changeImg = file.rename(input$changeImg$datapath, input$changeImg$name)
       changeImg = input$changeImg$name
       
       #Upload file to dropbox
-      drop_upload(changeImg, path = paste0(ProfileDir,res_auth$email), mode = "overwrite")
+      drop_upload(changeImg, path = paste0(ProfileDir,res_auth$email), mode = "overwrite", dtoken = token)
       
       #Add image name and url to credentials
       res_auth$image <- changeImg
-      res_auth$img_url <- drop_share(paste0(ProfileDir,res_auth$email,"/",res_auth$image))$url %>% str_replace(., "dl=0","raw=1")
+      res_auth$img_url <- drop_share(paste0(ProfileDir,res_auth$email,"/",res_auth$image), dtoken = token)$url %>% str_replace(., "dl=0","raw=1")
       
+      #Save changes to global dataframe
       Credentials$image[Credentials$id_uzytkownika == res_auth$id] <<- res_auth$image
       Credentials$img_url[Credentials$id_uzytkownika == res_auth$id] <<- res_auth$img_url
     }
+    #Save rest of changes to global dataframe
     Credentials$imie[Credentials$id_uzytkownika == res_auth$id] <<- res_auth$name
     Credentials$nazwisko[Credentials$id_uzytkownika == res_auth$id] <<- res_auth$surname
     Credentials$uzytkownik[Credentials$id_uzytkownika == res_auth$id] <<- res_auth$user
     
-    dbWriteTable(databaseConnection,"wlasciciel_konta",Tonvarchar(Credentials,columns_names=c("uzytkownik","mail","imie","nazwisko","image")), overwrite=T,field.types = c(uzytkownik = "nvarchar(500)",mail = "nvarchar(500)",imie = "nvarchar(500)",nazwisko = "nvarchar(500)",image="nvarchar(500)"))
+    #Write changes to database
+    dbWriteTable(databaseConnection,"wlasciciel_konta",
+                 Tonvarchar(Credentials,columns_names=c("uzytkownik","mail","imie","nazwisko","image", "img_url", "gmail_passwd", "drugi_mail")),
+                 overwrite=T,field.types = c(uzytkownik = "nvarchar(500)",mail = "nvarchar(500)",imie = "nvarchar(500)",nazwisko = "nvarchar(500)",
+                                             image="nvarchar(500)",img_url="nvarchar(500)",gmail_passwd="nvarchar(500)",drugi_mail="nvarchar(500)"))
     
     informationAlert(session,"Dane konta zostały zmienione","success")
     removeModal()
@@ -2860,9 +2943,14 @@ server = function(input, output, session ){
         if(input$actualPassword != input$newPassword)
         {
           if(nchar(input$newPassword) >= 2){
+            #Save password in global dataframe
             Credentials$haslo[Credentials$id_uzytkownika == res_auth$id] <<- input$newPassword
             
-            dbWriteTable(databaseConnection,"wlasciciel_konta",Tonvarchar(Credentials,columns_names=c("uzytkownik","mail","imie","nazwisko","image")), overwrite=T,field.types = c(uzytkownik = "nvarchar(500)",mail = "nvarchar(500)",imie = "nvarchar(500)",nazwisko = "nvarchar(500)",image="nvarchar(500)"))
+            #Write changes to database
+            dbWriteTable(databaseConnection,"wlasciciel_konta",
+                         Tonvarchar(Credentials,columns_names=c("uzytkownik","mail","imie","nazwisko","image", "img_url", "gmail_passwd", "drugi_mail")),
+                         overwrite=T,field.types = c(uzytkownik = "nvarchar(500)",mail = "nvarchar(500)",imie = "nvarchar(500)",nazwisko = "nvarchar(500)",
+                                                     image="nvarchar(500)",img_url="nvarchar(500)",gmail_passwd="nvarchar(500)",drugi_mail="nvarchar(500)"))
             
             informationAlert(session,"Hasło zostało zmienione", "success")
             removeModal()
