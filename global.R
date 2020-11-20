@@ -5,6 +5,7 @@ library(shinyWidgets)
 library(shinyTime)
 #Connecting with Dropbox
 library(rdrop2)
+library(httpuv)
 #Sending mails
 library(rJava)
 library(mailR)
@@ -46,6 +47,11 @@ library(config)
 #File exists
 library(RCurl)
 
+#Dropbox
+token <- readRDS("droptoken.rds")
+drop_acc(dtoken = token)
+drop_auth(rdstoken = "droptoken.rds") #auth for drop_delete
+
 #Database connection
 conn_args <- config::get("dataconnection")
 
@@ -56,6 +62,13 @@ databaseConnection <- dbConnect(odbc::odbc(),
                                 PWD = conn_args$pwd, 
                                 Port = conn_args$port, 
                                 Database = conn_args$database,
-                                TDS_Version = conn_args$version
-)
+                                TDS_Version = conn_args$version)
 
+#Change labels at login panel
+set_labels(
+  language = "en",
+  "Please authenticate" = "Zaloguj się",
+  "Username:" = "Login:",
+  "Password:" = "Hasło:",
+  "Login" = "Zaloguj"
+)
