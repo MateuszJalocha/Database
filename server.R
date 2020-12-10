@@ -5,8 +5,9 @@ Credentials = dbReadTable(databaseConnection, "wlasciciel_konta")
 Clients = dbReadTable(databaseConnection, "uczestnicy")
 Groups = dbReadTable(databaseConnection, "grupy")
 Amounts = dbReadTable(databaseConnection, "kwota_wplaty")
+MenuItems = c("dashboardMenu","data","paymentsDataMenu","dataMenu","classregisterMenu","mailMenu","filesMenu","userPanelMenu")
 Group = "wszyscy"
-UserPanelPosition = 3
+UserPanelPosition = 11
 ProfileDir = "Baza Danych/Profilowe/"
 
 #Creating a data frame with the data of persons who have not paid or have paid part of the payments
@@ -771,13 +772,22 @@ data_infos_dataTable <- function(data, kind, disable_toEdit_cols) {
                                                                                                                                                 Shiny.setInputValue('addObservation', true, {priority: 'event'});}")),
                                                                                                                            list(extend = "collection", text = 'Usuń',
                                                                                                                                 action = DT::JS("function ( e, dt, node, config ) {
-                                                                                                                                                Shiny.setInputValue('deleteObservation', true, {priority: 'event'});}")))))
+                                                                                                                                                Shiny.setInputValue('deleteObservation', true, {priority: 'event'});}")),
+                                                                                                                           list(extend = "collection", text = 'Edytuj',
+                                                                                                                                action = DT::JS("function ( e, dt, node, config ) {
+                                                                                                                                                Shiny.setInputValue('editObservation', true, {priority: 'event'});}")))))
   }
 
 #Returns data tables with payment or presence information
 data_payments_dataTable <- function(data, kind, disable_toEdit_cols) {
-  datatable(addWhitespaces(sort_columns(data,kind = kind),kind = kind), extensions = c ("Responsive"),
-            editable = list(target = 'cell', disable = list(columns = disable_toEdit_cols)))
+  datatable(addWhitespaces(sort_columns(data,kind = kind),kind = kind),extensions = c ("Responsive", "Buttons"),
+            callback=JS('$(".buttons-copy").css("background","red"); return table;'),
+            editable = list(target = 'cell', disable = list(columns = disable_toEdit_cols)),options = list(
+              dom = 'Bfrtip',
+              buttons = c('excel')
+            ))
+  
+  
 }
 
 #Selects the rows that contain the selected string in a given column
@@ -872,7 +882,7 @@ addClient_function <- function(data, clientData, kind, clients_ALL, payments_ALL
   clients_ALL = rbind(clients_ALL, clientData_separated$clients)
   clients_ALL[order(clients_ALL$id_uzytkownika, clients_ALL$id_uczestnika),]
   rownames(clients_ALL) = seq(1,nrow(clients_ALL))
-  
+
   #Bind by rows all payments table  with informations aoubt just added client
   payments_ALL[order(payments_ALL$id_uzytkownika, payments_ALL$id_uczestnika),]
   payments_ALL = rbind(payments_ALL, clientData_separated$payments)
@@ -906,6 +916,54 @@ client_already_exist <- function(session,clients_ALL, append_data, information,u
     #If the data set is empty, inform the user that the clients from the file are already in the database
     informationAlert(session,information, type = "warning")
   }
+}
+
+#Modal window to add and edit clients
+userModal <- function(client = NULL){
+  if(is.null(client)){
+    temp_pesel = 0
+    temp_birthDate = "2000-01-01"
+    temp_phone = 0
+    temp_guardianPhone = 0
+  } else{
+    temp_pesel = client$pesel
+    temp_birthDate = client$data_urodzenia
+    temp_phone = client$telefon
+    temp_guardianPhone = client$telefon_opiekuna
+  }
+  
+  
+  column(
+    width = 12,
+    offset = 2,
+    textInput("addName", value = client$imie,"Imie"),
+    textInput("addSurname", value = client$nazwisko, "Nazwisko"),
+    numericInput("addPesel",value = temp_pesel,"Pesel"),
+    dateInput("addBirthDate", value = temp_birthDate,"Data urodzenia"),
+    textInput("addBirthPlace", value = client$miejsce_urodzenia, "Miejsce urodzenia"),
+    textInput("addAddress", value = client$adres, "Adres"),
+    numericInput("addPhone", value = temp_phone,"Telefon"),
+    textInput("addMail", value = client$email, "E-mail"),
+    textInput("addSchool", value = client$szkola, "Szkoła"),
+    textInput("addGuardianName", value = client$imie_opiekuna, "Imie opiekuna"),
+    textInput("addGuardianSurname", value = client$nazwisko_opiekuna, "Nazwisko opiekuna"),
+    numericInput("addGuardianPhone", value = temp_guardianPhone,"Telefon opiekuna"),
+    textInput("addGuardianMail", value = client$email_opiekuna, "E-mail opiekuna")
+  )
+}
+
+#Verify if value convertion is possible
+convertion <- function(val_to_convert, func){
+  convertedVal <- tryCatch(
+    {
+      func(val_to_convert)
+    },
+    error=function(cond) {
+      NA
+    }
+  )
+    
+  return(as.character(convertedVal))
 }
 
 server = function(input, output, session ){
@@ -951,6 +1009,7 @@ server = function(input, output, session ){
   paymentsSum_year_reactive = reactiveValues(data = NULL)
   notpaid_all_reactive = reactiveValues(data = NULL)
   number_of_clients_reactive = reactiveValues(data = NULL)
+  filesMail_vals = reactiveValues(name = NULL, path = NULL)
   
   observe({
     if(!is.null(res_auth$id)){
@@ -1066,11 +1125,11 @@ server = function(input, output, session ){
     #Delete the Dropbox file and refresh files list
     if(deleteFile$delete)
     {
-      print(token)
       drop_delete(paste0(folderPath(),filesData$data$Nazwa[deleteFile$deleteRow]),dtoken = token)
       filesData$data = files_exists_verification(folderPath())
       
       updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+      updateFilePicker(session, "filesNamesMail", drop_dir(folderPath(), dtoken = token)$name)
       updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
       
     } else {
@@ -1087,13 +1146,14 @@ server = function(input, output, session ){
     rowNum <- parseDeleteDownloadEvent(input$downloadPressed)
   
     #Download file from Dropbox
-    drop_download(paste0(folderPath(),filesData$data$Nazwa[rowNum], dtoken = token),local_path = paste0("Downloads/",filesData$data$Nazwa[rowNum]),overwrite = TRUE)
+    drop_download(paste0(folderPath(),filesData$data$Nazwa[rowNum]), dtoken = token,overwrite = TRUE)
     informationAlert(session,"Plik został pobrany","success")
   })
   
   #Update the files in pickerInput after uploading a new one
   observeEvent(input$uploadFile,{
     updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+    updateFilePicker(session, "filesNamesMail", drop_dir(folderPath(), dtoken = token)$name)
     updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
   })
   
@@ -1151,6 +1211,7 @@ server = function(input, output, session ){
     
     #Upadte files informations
     updateFilePicker(session, "filesNames", drop_dir(folderPath(), dtoken = token)$name)
+    updateFilePicker(session, "filesNamesMail", drop_dir(folderPath(), dtoken = token)$name)
     updateFilePicker(session, "filesNamesDelete", drop_dir(folderPath(), dtoken = token)$name)
     
     informationAlert(session,"Pliki zostały usunięte","success")
@@ -1257,9 +1318,29 @@ server = function(input, output, session ){
       shiny::tagAppendAttributes(style = 'width: 100%;')
   })
   
+  #Render filesPickerMail to upload multiple files to mail with file names as choices
+  output[["filesPickerMail"]] <- renderUI ({
+    pickerInput(
+      inputId = "filesNamesMail", 
+      label = "Wybierz pliki do wysłania", 
+      choices = drop_dir(folderPath(), dtoken = token)$name, 
+      options = list(
+        `actions-box` = TRUE, 
+        size = 10,
+        `selected-text-format` = "count > 3"
+      ), 
+      multiple = TRUE
+    )
+  })
+  
   #Confirmation of willingness to send an e-mail
   observeEvent(input$sendMail,{
     confirmAlert(session,c("Nie", "Tak"), "sendMailConfirmation", "Czy chcesz wysłać maila?")
+  })
+  
+  observeEvent(input$filesMail,{
+    filesMail_vals$name = input$filesMail$name
+    filesMail_vals$path = input$filesMail$datapath
   })
   
   #Sending e-mail via gmail  
@@ -1292,10 +1373,17 @@ server = function(input, output, session ){
                   smtp = list(host.name = "smtp.gmail.com", port = 465,
                               user.name = res_auth$email %>% as.character(),
                               passwd = res_auth$gmail_passwd %>% as.character(), ssl = TRUE),
+                  attach.files = filesMail_vals$path,
+                  file.names = filesMail_vals$name,
                   authenticate = TRUE,
                   send = TRUE)
         informationAlert(session,"Mail został wysłany","success")
         sendMailConfirmation$confirm <- NULL
+        
+        #Reset file input
+        shinyjs::reset("filesMail")
+        filesMail_vals$name = NULL
+        filesMail_vals$path = NULL
       }
       
     } else {
@@ -1388,8 +1476,12 @@ server = function(input, output, session ){
     
     #Verify which columns have been edited and if they do not apply to payments or id's
     edited_column = colnames(clients$data[,!grepl("wplata|id_",colnames(clients$data))][,input$datasetTable_cell_edit$col, drop = FALSE])
-    
-    clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- input$datasetTable_cell_edit$value
+  
+    if(grepl("data",edited_column)){
+      clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- convertion(input$datasetTable_cell_edit$value, as.Date)
+    }else{
+      clients$data[[edited_column]][input$datasetTable_cell_edit$row] <<- input$datasetTable_cell_edit$value
+    }
     
     data_ALL = clients_and_payments_writeTable_edit(clients_ALL$data, payments_ALL$data,clients$data,Group_current$data, kind = "wplata")
     dbWriteTable(databaseConnection,"uczestnicy",Tonvarchar(data_ALL$clients,columns_names=c("imie","nazwisko","grupa","miejsce_urodzenia","adres","email","szkola","imie_opiekuna","nazwisko_opiekuna","email_opiekuna")), overwrite=T,field.types = c(imie = "nvarchar(500)",nazwisko = "nvarchar(500)",grupa = "nvarchar(500)",data_urodzenia="date",miejsce_urodzenia = "nvarchar(500)",adres = "nvarchar(500)",email = "nvarchar(500)",szkola = "nvarchar(500)",imie_opiekuna = "nvarchar(500)",nazwisko_opiekuna = "nvarchar(500)", email_opiekuna ="nvarchar(500)"))
@@ -1409,23 +1501,7 @@ server = function(input, output, session ){
         actionButton("addClient", "Potwierdź") 
       ),
       #Form
-      column(
-        width = 12,
-        offset = 2,
-        textInput("addName", "Imie"),
-        textInput("addSurname", "Nazwisko"),
-        numericInput("addPesel",value = 0,"Pesel"),
-        dateInput("addBirthDate", value = "2000-01-01","Data urodzenia"),
-        textInput("addBirthPlace", "Miejsce urodzenia"),
-        textInput("addAddress", "Adres"),
-        numericInput("addPhone", value = 0,"Telefon"),
-        textInput("addMail", "E-mail"),
-        textInput("addSchool", "Szkoła"),
-        textInput("addGuardianName", "Imie opiekuna"),
-        textInput("addGuardianSurname", "Nazwisko opiekuna"),
-        numericInput("addGuardianPhone", value = 0,"Telefon opiekuna"),
-        textInput("addGuardianMail", "E-mail opiekuna")
-      )
+      userModal()
     ))
   })
   
@@ -1433,23 +1509,23 @@ server = function(input, output, session ){
   observeEvent(input$addClient, {
     if(input$addName != "" & input$addSurname != "" & input$addGuardianName != "" & input$addGuardianSurname != "") {
       #Temporary dataframe with informations about client / if blanks are left fill them with "-"
-      clientData = data.frame(clients$data$id_uczestnika[nrow(clients$data)] + 1, res_auth$id,input$addName,input$addSurname,Group,input$addPesel,as.character(input$addBirthDate),
-                              input$addBirthPlace,input$addAddress,input$addPhone,input$addMail,input$addSchool,input$addGuardianName,
-                              input$addGuardianSurname,input$addGuardianPhone,input$addGuardianMail, stringsAsFactors = FALSE)
+      clientData = data.frame(clients$data$id_uczestnika[nrow(clients$data)] + 1, res_auth$id,input$addName,input$addSurname,Group,input$addGuardianMail,input$addPesel,
+                              convertion(as.character(input$addBirthDate)),input$addBirthPlace,input$addAddress,input$addPhone,input$addMail,input$addSchool,input$addGuardianName,
+                              input$addGuardianSurname,input$addGuardianPhone, stringsAsFactors = FALSE)
       clientData[clientData == ""] <- "-"
       clientsData_colnames =  colnames(clients$data)
-      colnames(clientData) = clientsData_colnames[!clientsData_colnames %in% grep(paste0(kind, collapse = "|"), clientsData_colnames, value = T)]
       
+      #Remove colnames about payments and presences
+      colnames(clientData) = clientsData_colnames[!clientsData_colnames %in% grep(paste("wplata","obecnosc", sep = "|"), clientsData_colnames, value = T)]
       if(!is.null(client_already_exist(session,clients_ALL$data, clientData, "Klient znajduje się już bazie",res_auth$id))){
         
-        #Add new client to an existing datatables 
+        #Add new client to an existing datatables
         newClient_payments = addClient_function(clients$data, clientData, "wplata", clients_ALL$data, payments_ALL$data)
         newClient_presences = addClient_function(clients_presence$data, clientData, "obecnosc", clients_ALL$data, schoolRegister_ALL$data)
         
         dbWriteTable(databaseConnection,"uczestnicy",Tonvarchar(newClient_payments$clients,columns_names=c("imie","nazwisko","grupa","miejsce_urodzenia","adres","email","szkola","imie_opiekuna","nazwisko_opiekuna","email_opiekuna")), overwrite=T,field.types = c(imie = "nvarchar(500)",nazwisko = "nvarchar(500)",grupa = "nvarchar(500)",data_urodzenia="date",miejsce_urodzenia = "nvarchar(500)",adres = "nvarchar(500)",email = "nvarchar(500)",szkola = "nvarchar(500)",imie_opiekuna = "nvarchar(500)",nazwisko_opiekuna = "nvarchar(500)", email_opiekuna ="nvarchar(500)"))
         
         clients_ALL$data <- dbReadTable(databaseConnection, "uczestnicy")
-        
         #If there are no observations about payments or presences number of columns is equal 3 else it is 5
         if(ncol(newClient_payments$payments) == 5){
           dbWriteTable(databaseConnection,"wplaty",Tonvarchar(newClient_payments$payments,columns_names=c("grupa")), overwrite=T,field.types = c(grupa = "nvarchar(500)"))
@@ -1473,6 +1549,54 @@ server = function(input, output, session ){
   observeEvent(input$deleteObservation, {
     if (!is.null(input$datasetTable_rows_selected)) {
       confirmAlert(session,c("Nie", "Tak"), "confirmDeleteRows", "Czy chcesz usunąć wybrane osoby?")
+    }
+  })
+  
+  #Confirmation if user wants to edit selected row, after "Edit" buttton was pushed
+  observeEvent(input$editObservation, {
+    if(length(input$datasetTable_rows_selected) == 1){
+      showModal(modalDialog(
+        title = "Edytuj uczestnika",
+        footer =  tagList(
+          modalButton("Wyjdź"),
+          actionButton("editClient", "Potwierdź") 
+        ),
+        #Form
+        userModal(clients$data[input$datasetTable_rows_selected,])
+      ))
+    } else if(length(input$datasetTable_rows_selected) == 0){
+      informationAlert(session,"Nie został wybrany żadny klient","error")
+    } else{
+      informationAlert(session,"Proszę o wybranie tylko jednego klienta","error")
+    }
+  })
+  
+  #Edit clients data based on filled form
+  observeEvent(input$editClient,{
+    if(input$addName != "" & input$addSurname != "" & input$addGuardianName != "" & input$addGuardianSurname != ""){
+
+      #Temporary data frame with informations about client
+      editedClient = data.frame(clients$data$id_uczestnika[nrow(clients$data)] + 1, res_auth$id,input$addName,input$addSurname,Group,input$addGuardianMail,input$addPesel,
+                                convertion(as.character(input$addBirthDate)),input$addBirthPlace,input$addAddress,input$addPhone,input$addMail,input$addSchool,input$addGuardianName,
+                              input$addGuardianSurname,input$addGuardianPhone, stringsAsFactors = FALSE)
+      colnames_clients = colnames(clients$data)
+      colnames_clients[!colnames_clients %in% grep(paste("wplata","obecnosc", sep = "|"), colnames_clients, value = T)]
+      
+      #Remove colnames about payments and presences
+      colnames(editedClient) = colnames_clients[!colnames_clients %in% grep(paste("wplata","obecnosc", sep = "|"), colnames_clients, value = T)]
+      
+      #Edit client data based on user and client id's
+      id_toEdit = clients$data$id_uczestnika[input$datasetTable_rows_selected]
+
+      for(name in colnames(editedClient)[!colnames(editedClient) %in% grep("id|grupa",colnames(editedClient), value = T)]){
+        clients_ALL$data[clients_ALL$data$id_uczestnika == id_toEdit &  clients_ALL$data$id_uzytkownika == res_auth$id, name] = editedClient[1, name]
+      }
+      
+      dbWriteTable(databaseConnection,"uczestnicy",Tonvarchar(clients_ALL$data,columns_names=c("imie","nazwisko","miejsce_urodzenia","adres","szkola","imie_opiekuna","nazwisko_opiekuna")), overwrite=T,field.types = c(imie = "nvarchar(500)",nazwisko = "nvarchar(500)",miejsce_urodzenia = "nvarchar(500)",adres = "nvarchar(500)",szkola = "nvarchar(500)",imie_opiekuna = "nvarchar(500)",nazwisko_opiekuna = "nvarchar(500)"))
+      informationAlert(session,"Dane zostały zmienione","success")
+      removeModal() 
+    } else{
+      informationAlert(session,"Proszę uzupełnić imię i nazwisko uczestnika oraz opiekuna","warning")
     }
   })
   
@@ -1987,7 +2111,7 @@ server = function(input, output, session ){
   #OKKOMENTARZE##################################Payments###############################
   
   #Display clients data /include responsive design and (action, delete) buttons
-  output$paymentsTable = renderDataTable({
+  output$paymentsTable = renderDataTable(server = FALSE, {
     data_payments_dataTable(clients$data,kind="wplata", grep("wplata",colnames(sort_columns(clients$data,kind="wplata")),fixed= TRUE,invert = TRUE))
   })
   
@@ -3004,4 +3128,14 @@ server = function(input, output, session ){
     numericInput("YearPayment_max", value = MaxYearPayment(), min = 1,"Maksymalna wysokość wpłaty rocznej")
   })
   
+  #It is neccesary to initialize body content at controlbar
+  observeEvent(input$controlBar, {
+    if(!is.null(res_auth$id)){
+      updatebs4TabItems(
+        session,
+        inputId = "sidebarMenu",
+        selected = which(MenuItems == input$sidebarMenu)
+      )
+    }
+  })
 }
