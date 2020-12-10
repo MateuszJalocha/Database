@@ -1,8 +1,9 @@
-#Shiny
+ #Shiny
 library(bs4Dash)
 library(shiny)
 library(shinyWidgets)
 library(shinyTime)
+library(shinyjs)
 #Connecting with Dropbox
 library(rdrop2)
 library(httpuv)
@@ -46,6 +47,7 @@ library(DBI)
 library(config)
 #File exists
 library(RCurl)
+
 
 #Dropbox
 token <- readRDS("droptoken.rds")
