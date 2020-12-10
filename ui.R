@@ -24,10 +24,6 @@ navbar = bs4DashNavbar(
 
 #Controlbar options
 controlbar = bs4DashControlbar(
-  skin = "light",
-  title = "Ustawienia limitów",
-  width = 250,
-  
   uiOutput("monthPayment_input"),
   uiOutput("yearPayment_input"),
   uiOutput("monthPayment_input_max"),
@@ -35,7 +31,12 @@ controlbar = bs4DashControlbar(
   uiOutput("number_of_classes"),
   div(style="text-align: center;",actionButton("globalChanges", "Zapisz zmiany", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")),
   uiOutput("selectedGroup"),
-  br()
+  br(),
+  skin = "light",
+  title = "Ustawienia limitów",
+  width = 250,
+  controlbar_overlay = TRUE,
+  inputId = "controlBar"
 )
 
 #Footer options
@@ -306,6 +307,7 @@ mail = fluidRow(
       ),
       uiOutput("mailTitle"),
       uiOutput("mailBody"),
+      fileInput("filesMail", label = "Wgraj pliki", multiple = T),
       actionButton("sendMail", "Wyślij maila", style="color: #fff; background-color: #337ab7; border-color: #2e6da4")
     )
   )
@@ -383,7 +385,7 @@ userPanel = fluidRow(
     uiOutput("userPanel")
   )
 )
-
+ 
 #############Tab items#################
 
 dashboardMenu = bs4TabItem(tabName = "dashboardMenu",
@@ -402,7 +404,7 @@ classregisterMenu = bs4TabItem(tabName = "classregisterMenu",
                                classRegister)
 #Combine all body components
 body = bs4DashBody(
-  bs4TabItems(dashboardMenu, filesMenu,mailMenu,dataMenu,paymentsDataMenu,classregisterMenu, userPanelMenu)
+  useShinyjs(), bs4TabItems(dashboardMenu, filesMenu,mailMenu,dataMenu,paymentsDataMenu,classregisterMenu, userPanelMenu)
 )
 
 
@@ -425,4 +427,12 @@ ui = bs4DashPage(
 )
 
 # Wrap UI with secure_app
-ui <- shinymanager::secure_app(ui)
+ui <- shinymanager::secure_app(ui,
+                               tags_bottom = tags$div(
+                                 tags$p(
+                                   "Trial account (login: admin, hasło: 123)"
+                                 )
+                               ),
+                               background = "linear-gradient(rgb(66,139,202),rgb(45,84,94));",
+                               tags$style(HTML('#auth_ui {background-color: #BF00FF;}'))
+                               )
